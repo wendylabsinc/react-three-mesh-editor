@@ -22,6 +22,10 @@ const config: StorybookConfig = {
   viteFinal: async (config) => {
     config.plugins = config.plugins || [];
     config.plugins.push(tailwindcss());
+    // Set base path for GitHub Pages deployment
+    if (process.env.NODE_ENV === 'production') {
+      config.base = '/react-three-mesh-editor/stories/';
+    }
     return config;
   },
 };
