@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useMemo } from 'react';
+import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { PivotControls } from '@react-three/drei';
 import type { Mesh } from 'three';
 import { BufferGeometry, Float32BufferAttribute, DoubleSide, Matrix4, Vector3 } from 'three';
@@ -31,7 +31,11 @@ export function FaceHighlight({
   const meshRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const lastDeltaRef = useRef<[number, number, number]>([0, 0, 0]);
+  // Store cumulative delta applied so far during this drag session
+  const appliedDeltaRef = useRef<[number, number, number]>([0, 0, 0]);
+  // Store the initial matrix when selection starts - this prevents feedback loop
+  const initialMatrixRef = useRef<Matrix4 | null>(null);
+  const wasSelectedRef = useRef(false);
 
   const geometry = useMemo(() => {
     const v1 = vertices[face.vertexIndices[0]];
@@ -66,6 +70,21 @@ export function FaceHighlight({
     ];
   }, [face.vertexIndices, vertices]);
 
+  // Capture initial position when face becomes selected
+  useEffect(() => {
+    if (selected && !wasSelectedRef.current) {
+      // Just became selected - capture the initial center position
+      const matrix = new Matrix4();
+      matrix.setPosition(faceCenter[0], faceCenter[1], faceCenter[2]);
+      initialMatrixRef.current = matrix;
+    }
+    if (!selected) {
+      // Deselected - clear the matrix
+      initialMatrixRef.current = null;
+    }
+    wasSelectedRef.current = selected;
+  }, [selected, faceCenter]);
+
   const handleClick = useCallback(
     (event: ThreeEvent<MouseEvent>) => {
       if (isDragging) return;
@@ -86,26 +105,51 @@ export function FaceHighlight({
 
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
-    lastDeltaRef.current = [0, 0, 0];
+    // Reset the applied delta when starting a new drag
+    appliedDeltaRef.current = [0, 0, 0];
   }, []);
 
   const handleDrag = useCallback(
-    (matrix: Matrix4) => {
-      // Get the current total delta from origin
-      const totalDelta = new Vector3();
-      totalDelta.setFromMatrixPosition(matrix);
+    (localMatrix: Matrix4) => {
+      // localMatrix contains the full current transformation
+      // We need to subtract the initial position to get just the delta
+      const currentPos = new Vector3();
+      currentPos.setFromMatrixPosition(localMatrix);
 
-      // Calculate incremental delta since last drag event
-      const incrementalDelta: [number, number, number] = [
-        totalDelta.x - lastDeltaRef.current[0],
-        totalDelta.y - lastDeltaRef.current[1],
-        totalDelta.z - lastDeltaRef.current[2],
+      const initialPos = new Vector3();
+      if (initialMatrixRef.current) {
+        initialPos.setFromMatrixPosition(initialMatrixRef.current);
+      }
+
+      // Total delta from initial position
+      const totalDelta: [number, number, number] = [
+        currentPos.x - initialPos.x,
+        currentPos.y - initialPos.y,
+        currentPos.z - initialPos.z,
       ];
 
-      // Update last delta
-      lastDeltaRef.current = [totalDelta.x, totalDelta.y, totalDelta.z];
+      // Calculate incremental delta (what we need to apply this frame)
+      const incrementalDelta: [number, number, number] = [
+        totalDelta[0] - appliedDeltaRef.current[0],
+        totalDelta[1] - appliedDeltaRef.current[1],
+        totalDelta[2] - appliedDeltaRef.current[2],
+      ];
 
-      onMoveVertices?.(face.vertexIndices as unknown as number[], incrementalDelta);
+      // Update what we've applied
+      appliedDeltaRef.current = totalDelta;
+
+      // Only apply if there's actual movement
+      if (Math.abs(incrementalDelta[0]) > 0.0001 || Math.abs(incrementalDelta[1]) > 0.0001 || Math.abs(incrementalDelta[2]) > 0.0001) {
+        onMoveVertices?.(face.vertexIndices as unknown as number[], incrementalDelta);
+
+        // Update the initial matrix to the current position so gizmo follows
+        const newMatrix = new Matrix4();
+        newMatrix.setPosition(currentPos.x, currentPos.y, currentPos.z);
+        initialMatrixRef.current = newMatrix;
+
+        // Reset applied delta since we're resetting the reference point
+        appliedDeltaRef.current = [0, 0, 0];
+      }
     },
     [face.vertexIndices, onMoveVertices]
   );
@@ -138,15 +182,16 @@ export function FaceHighlight({
     </mesh>
   );
 
-  if (selected && onMoveVertices) {
+  if (selected && onMoveVertices && initialMatrixRef.current) {
     return (
       <group>
         {meshElement}
         <PivotControls
+          matrix={initialMatrixRef.current}
           anchor={[0, 0, 0]}
-          offset={faceCenter}
           depthTest={false}
-          scale={0.4}
+          scale={0.3}
+          autoTransform={false}
           onDragStart={handleDragStart}
           onDrag={handleDrag as (matrix: Matrix4, deltaLocalMatrix: Matrix4, world: Matrix4, deltaWorld: Matrix4) => void}
           onDragEnd={handleDragEnd}

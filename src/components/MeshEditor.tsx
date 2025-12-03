@@ -61,6 +61,14 @@ export function MeshEditor({
     [editor]
   );
 
+  // Real-time vertex movement during drag (updates geometry without triggering re-render)
+  const handleVertexMoveRealtime = useCallback(
+    (index: number, position: [number, number, number]) => {
+      editor.updateVertexPosition(index, position);
+    },
+    [editor]
+  );
+
   // Object mode - render solid mesh
   if (mode === 'object') {
     return (
@@ -94,6 +102,7 @@ export function MeshEditor({
             hoverColor={hoverColor}
             onSelect={editor.selectVertex}
             onMove={handleVertexMove}
+            onMoveRealtime={handleVertexMoveRealtime}
           />
         ))}
 
@@ -111,6 +120,8 @@ export function MeshEditor({
             lineWidth={edgeLineWidth}
             onSelect={editor.selectEdge}
             onMoveVertices={editor.moveVerticesByDelta}
+            onTransformVertices={editor.transformVertices}
+            onCaptureInitialPositions={editor.captureInitialPositions}
           />
         ))}
 

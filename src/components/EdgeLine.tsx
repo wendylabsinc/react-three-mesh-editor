@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Line, PivotControls } from '@react-three/drei';
-import { Matrix4, Vector3 } from 'three';
+import { Matrix4, Vector3, Quaternion } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { EdgeData, VertexData } from '../types';
 
@@ -14,6 +14,13 @@ export interface EdgeLineProps {
   lineWidth?: number;
   onSelect?: (index: number, addToSelection: boolean) => void;
   onMoveVertices?: (vertexIndices: number[], delta: [number, number, number]) => void;
+  onTransformVertices?: (
+    vertexIndices: number[],
+    center: [number, number, number],
+    rotation: { x: number; y: number; z: number; w: number },
+    scale: [number, number, number]
+  ) => void;
+  onCaptureInitialPositions?: (vertexIndices: number[]) => void;
 }
 
 export function EdgeLine({
@@ -26,10 +33,18 @@ export function EdgeLine({
   lineWidth = 2,
   onSelect,
   onMoveVertices,
+  onTransformVertices,
+  onCaptureInitialPositions,
 }: EdgeLineProps) {
   const [hovered, setHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const lastDeltaRef = useRef<[number, number, number]>([0, 0, 0]);
+  // Store cumulative delta applied so far during this drag session
+  const appliedDeltaRef = useRef<[number, number, number]>([0, 0, 0]);
+  // Store the initial matrix when selection starts - this prevents feedback loop
+  const initialMatrixRef = useRef<Matrix4 | null>(null);
+  const wasSelectedRef = useRef(false);
+  // Store initial vertex positions for rotation/scale operations
+  const initialVertexPositionsRef = useRef<Map<number, [number, number, number]>>(new Map());
 
   const points = useMemo(() => {
     const v1 = vertices[edge.vertexIndices[0]];
@@ -48,6 +63,21 @@ export function EdgeLine({
       (v1.position[2] + v2.position[2]) / 2,
     ];
   }, [edge.vertexIndices, vertices]);
+
+  // Capture initial position when edge becomes selected
+  useEffect(() => {
+    if (selected && !wasSelectedRef.current) {
+      // Just became selected - capture the initial center position
+      const matrix = new Matrix4();
+      matrix.setPosition(edgeCenter[0], edgeCenter[1], edgeCenter[2]);
+      initialMatrixRef.current = matrix;
+    }
+    if (!selected) {
+      // Deselected - clear the matrix
+      initialMatrixRef.current = null;
+    }
+    wasSelectedRef.current = selected;
+  }, [selected, edgeCenter]);
 
   const handleClick = useCallback(
     (event: ThreeEvent<MouseEvent>) => {
@@ -69,28 +99,85 @@ export function EdgeLine({
 
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
-    lastDeltaRef.current = [0, 0, 0];
-  }, []);
+    // Reset the applied delta when starting a new drag
+    appliedDeltaRef.current = [0, 0, 0];
+
+    // Capture initial vertex positions for rotation/scale operations
+    initialVertexPositionsRef.current.clear();
+    for (const idx of edge.vertexIndices) {
+      const v = vertices[idx];
+      if (v) {
+        initialVertexPositionsRef.current.set(idx, [...v.position]);
+      }
+    }
+
+    // Also capture in the hook for geometry transformations
+    onCaptureInitialPositions?.(edge.vertexIndices as unknown as number[]);
+  }, [edge.vertexIndices, vertices, onCaptureInitialPositions]);
 
   const handleDrag = useCallback(
-    (matrix: Matrix4) => {
-      // Get the current total delta from origin
-      const totalDelta = new Vector3();
-      totalDelta.setFromMatrixPosition(matrix);
+    (localMatrix: Matrix4) => {
+      // Extract position, rotation, and scale from the matrix
+      const position = new Vector3();
+      const quaternion = new Quaternion();
+      const scale = new Vector3();
+      localMatrix.decompose(position, quaternion, scale);
 
-      // Calculate incremental delta since last drag event
-      const incrementalDelta: [number, number, number] = [
-        totalDelta.x - lastDeltaRef.current[0],
-        totalDelta.y - lastDeltaRef.current[1],
-        totalDelta.z - lastDeltaRef.current[2],
-      ];
+      const initialPos = new Vector3();
+      if (initialMatrixRef.current) {
+        initialPos.setFromMatrixPosition(initialMatrixRef.current);
+      }
 
-      // Update last delta
-      lastDeltaRef.current = [totalDelta.x, totalDelta.y, totalDelta.z];
+      // Check if there's rotation or non-uniform scale
+      const hasRotation = Math.abs(quaternion.x) > 0.0001 ||
+                          Math.abs(quaternion.y) > 0.0001 ||
+                          Math.abs(quaternion.z) > 0.0001 ||
+                          Math.abs(quaternion.w - 1) > 0.0001;
+      const hasScale = Math.abs(scale.x - 1) > 0.0001 ||
+                       Math.abs(scale.y - 1) > 0.0001 ||
+                       Math.abs(scale.z - 1) > 0.0001;
 
-      onMoveVertices?.(edge.vertexIndices as unknown as number[], incrementalDelta);
+      if ((hasRotation || hasScale) && onTransformVertices) {
+        // Apply rotation/scale transformation around the center
+        onTransformVertices(
+          edge.vertexIndices as unknown as number[],
+          [initialPos.x, initialPos.y, initialPos.z],
+          { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
+          [scale.x, scale.y, scale.z]
+        );
+      } else if (onMoveVertices) {
+        // Handle translation only
+        const totalDelta: [number, number, number] = [
+          position.x - initialPos.x,
+          position.y - initialPos.y,
+          position.z - initialPos.z,
+        ];
+
+        // Calculate incremental delta (what we need to apply this frame)
+        const incrementalDelta: [number, number, number] = [
+          totalDelta[0] - appliedDeltaRef.current[0],
+          totalDelta[1] - appliedDeltaRef.current[1],
+          totalDelta[2] - appliedDeltaRef.current[2],
+        ];
+
+        // Update what we've applied
+        appliedDeltaRef.current = totalDelta;
+
+        // Only apply if there's actual movement
+        if (Math.abs(incrementalDelta[0]) > 0.0001 || Math.abs(incrementalDelta[1]) > 0.0001 || Math.abs(incrementalDelta[2]) > 0.0001) {
+          onMoveVertices(edge.vertexIndices as unknown as number[], incrementalDelta);
+
+          // Update the initial matrix to the current position so gizmo follows
+          const newMatrix = new Matrix4();
+          newMatrix.setPosition(position.x, position.y, position.z);
+          initialMatrixRef.current = newMatrix;
+
+          // Reset applied delta since we're resetting the reference point
+          appliedDeltaRef.current = [0, 0, 0];
+        }
+      }
     },
-    [edge.vertexIndices, onMoveVertices]
+    [edge.vertexIndices, onMoveVertices, onTransformVertices]
   );
 
   const handleDragEnd = useCallback(() => {
@@ -114,15 +201,16 @@ export function EdgeLine({
     />
   );
 
-  if (selected && onMoveVertices) {
+  if (selected && onMoveVertices && initialMatrixRef.current) {
     return (
       <group>
         {lineElement}
         <PivotControls
+          matrix={initialMatrixRef.current}
           anchor={[0, 0, 0]}
-          offset={edgeCenter}
           depthTest={false}
-          scale={0.4}
+          scale={0.3}
+          autoTransform={false}
           onDragStart={handleDragStart}
           onDrag={handleDrag as (matrix: Matrix4, deltaLocalMatrix: Matrix4, world: Matrix4, deltaWorld: Matrix4) => void}
           onDragEnd={handleDragEnd}

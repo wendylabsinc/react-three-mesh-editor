@@ -235,3 +235,83 @@ export function getEdgeCenter(edge: EdgeData, vertices: VertexData[]): [number, 
     (v1.position[2] + v2.position[2]) / 2,
   ];
 }
+
+export function transformVerticesAroundCenter(
+  geometry: BufferGeometry,
+  vertexIndices: number[],
+  center: [number, number, number],
+  rotation: { x: number; y: number; z: number; w: number },
+  scale: [number, number, number],
+  vertices?: VertexData[],
+  initialPositions?: Map<number, [number, number, number]>
+): void {
+  const positionAttribute = geometry.getAttribute('position');
+  if (!positionAttribute) return;
+
+  // Collect all original buffer indices to update
+  const indicesToUpdate = new Map<number, number>(); // originalIndex -> uniqueIndex
+
+  for (const index of vertexIndices) {
+    if (vertices && vertices[index]?.originalIndices) {
+      for (const origIndex of vertices[index].originalIndices!) {
+        indicesToUpdate.set(origIndex, index);
+      }
+    } else {
+      indicesToUpdate.set(index, index);
+    }
+  }
+
+  // Apply transformation to each vertex
+  for (const [origIndex, uniqueIndex] of indicesToUpdate) {
+    // Get initial position (from captured positions or current)
+    let initialX: number, initialY: number, initialZ: number;
+    if (initialPositions && initialPositions.has(uniqueIndex)) {
+      const pos = initialPositions.get(uniqueIndex)!;
+      initialX = pos[0];
+      initialY = pos[1];
+      initialZ = pos[2];
+    } else {
+      initialX = positionAttribute.getX(origIndex);
+      initialY = positionAttribute.getY(origIndex);
+      initialZ = positionAttribute.getZ(origIndex);
+    }
+
+    // Translate to origin (relative to center)
+    let x = initialX - center[0];
+    let y = initialY - center[1];
+    let z = initialZ - center[2];
+
+    // Apply scale
+    x *= scale[0];
+    y *= scale[1];
+    z *= scale[2];
+
+    // Apply rotation (quaternion rotation)
+    const qx = rotation.x;
+    const qy = rotation.y;
+    const qz = rotation.z;
+    const qw = rotation.w;
+
+    // Rotate point by quaternion: p' = q * p * q^-1
+    // Optimized formula for rotating a vector by a quaternion
+    const ix = qw * x + qy * z - qz * y;
+    const iy = qw * y + qz * x - qx * z;
+    const iz = qw * z + qx * y - qy * x;
+    const iw = -qx * x - qy * y - qz * z;
+
+    const rx = ix * qw + iw * -qx + iy * -qz - iz * -qy;
+    const ry = iy * qw + iw * -qy + iz * -qx - ix * -qz;
+    const rz = iz * qw + iw * -qz + ix * -qy - iy * -qx;
+
+    // Translate back from origin
+    const finalX = rx + center[0];
+    const finalY = ry + center[1];
+    const finalZ = rz + center[2];
+
+    positionAttribute.setXYZ(origIndex, finalX, finalY, finalZ);
+  }
+
+  positionAttribute.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+}

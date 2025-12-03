@@ -14,6 +14,7 @@ export interface VertexHandleProps {
   hoverColor?: string;
   onSelect?: (index: number, addToSelection: boolean) => void;
   onMove?: (index: number, position: [number, number, number]) => void;
+  onMoveRealtime?: (index: number, position: [number, number, number]) => void;
 }
 
 export function VertexHandle({
@@ -25,6 +26,7 @@ export function VertexHandle({
   hoverColor = '#7bb3e0',
   onSelect,
   onMove,
+  onMoveRealtime,
 }: VertexHandleProps) {
   const meshRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
@@ -68,8 +70,11 @@ export function VertexHandle({
 
       // Store final position for use in onDragEnd
       finalPositionRef.current = [position.x, position.y, position.z];
+
+      // Update geometry in real-time during drag
+      onMoveRealtime?.(vertex.index, finalPositionRef.current);
     },
-    []
+    [vertex.index, onMoveRealtime]
   );
 
   const handleDragEnd = useCallback(() => {

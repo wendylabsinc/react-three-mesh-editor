@@ -1,7 +1,7 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import type { BufferGeometry } from 'three';
 import type { EditorMode, EditMode, MeshEditorState, VertexData, EdgeData, FaceData } from '../types';
-import { extractVertices, extractEdges, extractFaces, moveVertices, updateVertexPosition } from '../utils/geometry';
+import { extractVertices, extractEdges, extractFaces, moveVertices, updateVertexPosition, transformVerticesAroundCenter } from '../utils/geometry';
 
 export interface UseMeshEditorOptions {
   geometry: BufferGeometry;
@@ -24,6 +24,13 @@ export interface UseMeshEditorReturn {
   moveSelectedVertices: (delta: [number, number, number]) => void;
   moveVerticesByDelta: (vertexIndices: number[], delta: [number, number, number]) => void;
   updateVertexPosition: (index: number, position: [number, number, number]) => void;
+  transformVertices: (
+    vertexIndices: number[],
+    center: [number, number, number],
+    rotation: { x: number; y: number; z: number; w: number },
+    scale: [number, number, number]
+  ) => void;
+  captureInitialPositions: (vertexIndices: number[]) => void;
   refreshGeometry: () => void;
 }
 
@@ -42,6 +49,9 @@ export function useMeshEditor({
   });
 
   const [geometryVersion, setGeometryVersion] = useState(0);
+
+  // Store initial positions for rotation/scale operations
+  const initialPositionsRef = useRef<Map<number, [number, number, number]>>(new Map());
 
   // geometryVersion is used to force re-extraction when geometry buffer changes
   const vertices = useMemo(
@@ -162,6 +172,42 @@ export function useMeshEditor({
     setGeometryVersion((v) => v + 1);
   }, []);
 
+  const handleCaptureInitialPositions = useCallback(
+    (vertexIndices: number[]) => {
+      initialPositionsRef.current.clear();
+      for (const idx of vertexIndices) {
+        const v = vertices[idx];
+        if (v) {
+          initialPositionsRef.current.set(idx, [...v.position]);
+        }
+      }
+    },
+    [vertices]
+  );
+
+  const handleTransformVertices = useCallback(
+    (
+      vertexIndices: number[],
+      center: [number, number, number],
+      rotation: { x: number; y: number; z: number; w: number },
+      scale: [number, number, number]
+    ) => {
+      if (vertexIndices.length === 0) return;
+      transformVerticesAroundCenter(
+        geometry,
+        vertexIndices,
+        center,
+        rotation,
+        scale,
+        vertices,
+        initialPositionsRef.current
+      );
+      setGeometryVersion((v) => v + 1);
+      onGeometryChange?.(geometry);
+    },
+    [geometry, onGeometryChange, vertices]
+  );
+
   return {
     state,
     vertices,
@@ -176,6 +222,8 @@ export function useMeshEditor({
     moveSelectedVertices: handleMoveSelectedVertices,
     moveVerticesByDelta: handleMoveVerticesByDelta,
     updateVertexPosition: handleUpdateVertexPosition,
+    transformVertices: handleTransformVertices,
+    captureInitialPositions: handleCaptureInitialPositions,
     refreshGeometry,
   };
 }
