@@ -61,12 +61,14 @@ function App() {
   - **Vertex Mode**: Small cubes at each vertex that can be selected and moved
   - **Edge Mode**: Lines connecting vertices that can be selected and transformed
   - **Face Mode**: Triangular faces that can be selected and transformed
+- **Face Extrusion**: Extrude faces along their normal to create new geometry
 
 ### Controls
 
 - Click a vertex/edge/face to select it
 - Shift+Click to add to selection
 - Use custom transform controls (see [Custom Controls Guide](./docs/custom-controls.md))
+- Extrude faces to create new geometry (see [Face Extrusion Guide](./docs/face-extrusion.md))
 
 ### Bring Your Own Controls (BYOC)
 
