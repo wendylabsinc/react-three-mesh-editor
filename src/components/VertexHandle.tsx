@@ -1,9 +1,21 @@
-import { useRef, useState, useCallback, useMemo } from 'react';
-import { PivotControls } from '@react-three/drei';
+import { useRef, useState, useCallback } from 'react';
 import type { Mesh } from 'three';
-import { Matrix4, Vector3 } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { VertexData } from '../types';
+
+/**
+ * Props passed to the custom control render function for vertices.
+ */
+export interface VertexControlRenderProps {
+  /** The vertex data */
+  vertex: VertexData;
+  /** Callback when vertex position changes (absolute position) */
+  onMove: (position: [number, number, number]) => void;
+  /** Callback when drag starts */
+  onDragStart?: () => void;
+  /** Callback when drag ends */
+  onDragEnd?: () => void;
+}
 
 /**
  * Props for the VertexHandle component.
@@ -11,7 +23,7 @@ import type { VertexData } from '../types';
 export interface VertexHandleProps {
   /** The vertex data to render */
   vertex: VertexData;
-  /** Size of the vertex sphere in world units @default 0.05 */
+  /** Size of the vertex cube in world units @default 0.05 */
   size?: number;
   /** Whether this vertex is selected */
   selected?: boolean;
@@ -23,17 +35,43 @@ export interface VertexHandleProps {
   hoverColor?: string;
   /** Callback when vertex is clicked for selection */
   onSelect?: (index: number, addToSelection: boolean) => void;
-  /** Callback when vertex position changes (on drag end) */
+  /** Callback when vertex position changes (absolute position) */
   onMove?: (index: number, position: [number, number, number]) => void;
-  /** Callback during drag for real-time updates */
-  onMoveRealtime?: (index: number, position: [number, number, number]) => void;
+  /**
+   * Render function for custom transform controls.
+   * When provided, wraps the vertex handle with custom controls.
+   * For vertices, only translation makes sense (no rotation/scale).
+   */
+  renderControl?: (props: VertexControlRenderProps) => React.ReactNode;
 }
 
 /**
  * Interactive vertex handle component.
  *
- * Renders a sphere at the vertex position that can be selected and moved
- * using PivotControls. Supports click selection and drag movement.
+ * Renders a cube at the vertex position that can be selected.
+ * Use the `renderControl` prop to provide custom transform controls.
+ *
+ * @example
+ * ```tsx
+ * // With custom PivotControls
+ * <VertexHandle
+ *   vertex={vertex}
+ *   selected={isSelected}
+ *   onSelect={handleSelect}
+ *   onMove={handleMove}
+ *   renderControl={({ vertex, onMove }) => (
+ *     <PivotControls
+ *       anchor={[0, 0, 0]}
+ *       onDrag={(matrix) => {
+ *         const pos = new Vector3().setFromMatrixPosition(matrix);
+ *         onMove([pos.x, pos.y, pos.z]);
+ *       }}
+ *     >
+ *       {children}
+ *     </PivotControls>
+ *   )}
+ * />
+ * ```
  */
 export function VertexHandle({
   vertex,
@@ -44,19 +82,11 @@ export function VertexHandle({
   hoverColor = '#7bb3e0',
   onSelect,
   onMove,
-  onMoveRealtime,
+  renderControl,
 }: VertexHandleProps) {
   const meshRef = useRef<Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const finalPositionRef = useRef<[number, number, number]>([0, 0, 0]);
-
-  // Create a matrix that positions the PivotControls at the vertex position
-  const initialMatrix = useMemo(() => {
-    const matrix = new Matrix4();
-    matrix.setPosition(vertex.position[0], vertex.position[1], vertex.position[2]);
-    return matrix;
-  }, [vertex.position]);
 
   const handleClick = useCallback(
     (event: ThreeEvent<MouseEvent>) => {
@@ -76,66 +106,26 @@ export function VertexHandle({
     setHovered(false);
   }, []);
 
+  const handleMove = useCallback(
+    (position: [number, number, number]) => {
+      onMove?.(vertex.index, position);
+    },
+    [vertex.index, onMove]
+  );
+
   const handleDragStart = useCallback(() => {
     setIsDragging(true);
   }, []);
 
-  const handleDrag = useCallback(
-    (_localMatrix: Matrix4, _deltaLocalMatrix: Matrix4, worldMatrix: Matrix4) => {
-      // worldMatrix gives the absolute world position
-      const position = new Vector3();
-      position.setFromMatrixPosition(worldMatrix);
-
-      // Store final position for use in onDragEnd
-      finalPositionRef.current = [position.x, position.y, position.z];
-
-      // Update geometry in real-time during drag
-      onMoveRealtime?.(vertex.index, finalPositionRef.current);
-    },
-    [vertex.index, onMoveRealtime]
-  );
-
   const handleDragEnd = useCallback(() => {
-    // Only update geometry when drag ends
-    onMove?.(vertex.index, finalPositionRef.current);
     setTimeout(() => {
       setIsDragging(false);
     }, 100);
-  }, [vertex.index, onMove]);
+  }, []);
 
   const color = selected ? selectedColor : hovered ? hoverColor : defaultColor;
 
-  // When selected, use PivotControls with matrix prop for positioning
-  if (selected) {
-    return (
-      <PivotControls
-        matrix={initialMatrix}
-        anchor={[0, 0, 0]}
-        depthTest={false}
-        scale={size * 3}
-        autoTransform={true}
-        onDragStart={handleDragStart}
-        onDrag={handleDrag as (matrix: Matrix4, deltaLocalMatrix: Matrix4, world: Matrix4, deltaWorld: Matrix4) => void}
-        onDragEnd={handleDragEnd}
-      >
-        <mesh
-          ref={meshRef}
-          onClick={handleClick}
-          onPointerOver={handlePointerOver}
-          onPointerOut={handlePointerOut}
-        >
-          <boxGeometry args={[size, size, size]} />
-          <meshStandardMaterial
-            color={color}
-            emissive={selectedColor}
-            emissiveIntensity={0.3}
-          />
-        </mesh>
-      </PivotControls>
-    );
-  }
-
-  return (
+  const meshElement = (
     <mesh
       ref={meshRef}
       position={vertex.position}
@@ -146,9 +136,26 @@ export function VertexHandle({
       <boxGeometry args={[size, size, size]} />
       <meshStandardMaterial
         color={color}
-        emissive={undefined}
-        emissiveIntensity={0}
+        emissive={selected ? selectedColor : undefined}
+        emissiveIntensity={selected ? 0.3 : 0}
       />
     </mesh>
   );
+
+  // If selected and renderControl is provided, wrap with custom control
+  if (selected && renderControl) {
+    return (
+      <>
+        {renderControl({
+          vertex,
+          onMove: handleMove,
+          onDragStart: handleDragStart,
+          onDragEnd: handleDragEnd,
+        })}
+        {meshElement}
+      </>
+    );
+  }
+
+  return meshElement;
 }

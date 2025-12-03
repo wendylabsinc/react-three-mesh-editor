@@ -1,23 +1,50 @@
 import { Box, Pencil, Grid3X3, Minus, Triangle } from 'lucide-react';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
+  Menubar,
+  MenubarContent,
+  MenubarMenu,
+  MenubarRadioGroup,
+  MenubarRadioItem,
+  MenubarShortcut,
+  MenubarTrigger,
+} from './ui/menubar';
+import { Button } from './ui/button';
+import { ButtonGroup } from './ui/button-group';
 import { cn } from '../lib/utils';
 import type { EditorMode, EditMode } from '../types';
 
+/**
+ * Props for the MeshEditorMenuBar component.
+ */
 export interface MeshEditorMenuBarProps {
+  /** Current editor mode (object or edit) */
   mode: EditorMode;
+  /** Current edit sub-mode (vertex, edge, or face) */
   editMode: EditMode;
+  /** Callback when editor mode changes */
   onModeChange: (mode: EditorMode) => void;
+  /** Callback when edit sub-mode changes */
   onEditModeChange: (editMode: EditMode) => void;
+  /** Additional CSS classes */
   className?: string;
 }
 
+/**
+ * A shadcn-styled menu bar for the mesh editor.
+ *
+ * Provides a Mode menu for switching between object/edit modes and
+ * a ButtonGroup for selecting the edit sub-mode (vertex, edge, face).
+ *
+ * @example
+ * ```tsx
+ * <MeshEditorMenuBar
+ *   mode="edit"
+ *   editMode="vertex"
+ *   onModeChange={setMode}
+ *   onEditModeChange={setEditMode}
+ * />
+ * ```
+ */
 export function MeshEditorMenuBar({
   mode,
   editMode,
@@ -29,72 +56,67 @@ export function MeshEditorMenuBar({
     onModeChange(value as EditorMode);
   };
 
-  const handleEditModeChange = (value: string) => {
-    if (value) {
-      onEditModeChange(value as EditMode);
-    }
-  };
-
   return (
-    <div
-      className={cn(
-        'flex items-center gap-4 rounded-md border bg-background p-2 shadow-sm',
-        className
-      )}
-    >
-      {/* Mode Select */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium text-muted-foreground">Mode:</span>
-        <Select value={mode} onValueChange={handleModeChange}>
-          <SelectTrigger className="w-[140px]">
-            <SelectValue placeholder="Select mode" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="object">
-              <div className="flex items-center gap-2">
-                <Box className="h-4 w-4" />
-                <span>Object Mode</span>
-              </div>
-            </SelectItem>
-            <SelectItem value="edit">
-              <div className="flex items-center gap-2">
-                <Pencil className="h-4 w-4" />
-                <span>Edit Mode</span>
-              </div>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+    <div className={cn('flex items-center gap-2', className)}>
+      {/* Mode Menu */}
+      <Menubar className="border-none shadow-none bg-transparent p-0">
+        <MenubarMenu>
+          <MenubarTrigger className="border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground">
+            {mode === 'object' ? (
+              <Box className="mr-2 h-4 w-4" />
+            ) : (
+              <Pencil className="mr-2 h-4 w-4" />
+            )}
+            {mode === 'object' ? 'Object Mode' : 'Edit Mode'}
+          </MenubarTrigger>
+          <MenubarContent>
+            <MenubarRadioGroup value={mode} onValueChange={handleModeChange}>
+              <MenubarRadioItem value="object">
+                <Box className="mr-2 h-4 w-4" />
+                Object Mode
+                <MenubarShortcut>Tab</MenubarShortcut>
+              </MenubarRadioItem>
+              <MenubarRadioItem value="edit">
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Mode
+                <MenubarShortcut>Tab</MenubarShortcut>
+              </MenubarRadioItem>
+            </MenubarRadioGroup>
+          </MenubarContent>
+        </MenubarMenu>
+      </Menubar>
 
-      {/* Edit Mode Toggle Group - Only visible in Edit Mode */}
+      {/* Selection ButtonGroup - Only visible in Edit Mode */}
       {mode === 'edit' && (
-        <>
-          <div className="h-6 w-px bg-border" />
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-muted-foreground">
-              Selection:
-            </span>
-            <ToggleGroup
-              type="single"
-              value={editMode}
-              onValueChange={handleEditModeChange}
-              variant="outline"
-            >
-              <ToggleGroupItem value="vertex" aria-label="Vertex mode">
-                <Grid3X3 className="mr-1 h-4 w-4" />
-                Vertex
-              </ToggleGroupItem>
-              <ToggleGroupItem value="edge" aria-label="Edge mode">
-                <Minus className="mr-1 h-4 w-4" />
-                Edge
-              </ToggleGroupItem>
-              <ToggleGroupItem value="face" aria-label="Face mode">
-                <Triangle className="mr-1 h-4 w-4" />
-                Face
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-        </>
+        <ButtonGroup>
+          <Button
+            variant={editMode === 'vertex' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => onEditModeChange('vertex')}
+            aria-label="Vertex mode"
+          >
+            <Grid3X3 className="mr-1 h-4 w-4" />
+            Vertex
+          </Button>
+          <Button
+            variant={editMode === 'edge' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => onEditModeChange('edge')}
+            aria-label="Edge mode"
+          >
+            <Minus className="mr-1 h-4 w-4" />
+            Edge
+          </Button>
+          <Button
+            variant={editMode === 'face' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => onEditModeChange('face')}
+            aria-label="Face mode"
+          >
+            <Triangle className="mr-1 h-4 w-4" />
+            Face
+          </Button>
+        </ButtonGroup>
       )}
     </div>
   );

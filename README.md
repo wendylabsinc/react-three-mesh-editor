@@ -2,6 +2,11 @@
 
 A React Three Fiber library for mesh editing similar to Blender, with object/edit modes and vertex/edge/face selection.
 
+[![npm version](https://img.shields.io/npm/v/react-three-mesh-editor)](https://www.npmjs.com/package/react-three-mesh-editor)
+[![license](https://img.shields.io/npm/l/react-three-mesh-editor)](https://github.com/wendylabsinc/react-three-mesh-editor/blob/main/LICENSE)
+
+**[Documentation](https://wendylabsinc.github.io/react-three-mesh-editor/)** | **[Storybook](https://wendylabsinc.github.io/react-three-mesh-editor/stories)** | **[API Reference](https://wendylabsinc.github.io/react-three-mesh-editor/docs)**
+
 ## Installation
 
 ```bash
@@ -49,17 +54,45 @@ function App() {
 
 ## Features
 
-- **Object Mode**: Solid mesh rendering
+- **Object Mode**: Solid mesh rendering with optional selection outline
 - **Edit Mode**: Semi-transparent mesh with wireframe overlay
-  - **Vertex Mode**: Small cubes at each vertex that can be selected and moved using PivotControls
-  - **Edge Mode**: Lines connecting vertices that can be selected
-  - **Face Mode**: Triangular faces that can be selected
+  - **Vertex Mode**: Small cubes at each vertex that can be selected and moved
+  - **Edge Mode**: Lines connecting vertices that can be selected and transformed
+  - **Face Mode**: Triangular faces that can be selected and transformed
 
 ### Controls
 
 - Click a vertex/edge/face to select it
 - Shift+Click to add to selection
-- In vertex mode, drag the PivotControls gizmo to move selected vertices
+- Use custom transform controls (see [Custom Controls Guide](./docs/custom-controls.md))
+
+### Bring Your Own Controls (BYOC)
+
+This library uses a **render props pattern** for transform controls. You provide your own controls (e.g., PivotControls from @react-three/drei):
+
+```tsx
+import { PivotControls } from '@react-three/drei';
+import { Matrix4, Vector3 } from 'three';
+
+<MeshEditor
+  geometry={geometry}
+  mode="edit"
+  editMode="vertex"
+  renderVertexControl={({ vertex, onMove }) => (
+    <PivotControls
+      matrix={new Matrix4().setPosition(...vertex.position)}
+      disableRotations
+      disableScaling
+      onDrag={(matrix) => {
+        const pos = new Vector3().setFromMatrixPosition(matrix);
+        onMove([pos.x, pos.y, pos.z]);
+      }}
+    />
+  )}
+/>
+```
+
+See the full [Custom Controls Guide](./docs/custom-controls.md) for detailed examples.
 
 ## Components
 
@@ -75,6 +108,8 @@ interface MeshEditorProps {
   onModeChange?: (mode: EditorMode) => void;
   onEditModeChange?: (editMode: EditMode) => void;
   onGeometryChange?: (geometry: BufferGeometry) => void;
+
+  // Appearance
   vertexSize?: number;
   edgeLineWidth?: number;
   selectedColor?: string;
@@ -85,6 +120,17 @@ interface MeshEditorProps {
   transparentOpacity?: number;
   overlayColor?: string;
   wireframeColor?: string;
+
+  // Selection outline (object mode)
+  selected?: boolean;
+  showOutline?: boolean;
+  outlineColor?: string;
+  outlineThickness?: number;
+
+  // Custom controls (BYOC)
+  renderVertexControl?: (props: VertexControlRenderProps) => React.ReactNode;
+  renderEdgeControl?: (props: EdgeControlRenderProps) => React.ReactNode;
+  renderFaceControl?: (props: FaceControlRenderProps) => React.ReactNode;
 }
 ```
 
@@ -224,10 +270,22 @@ npm run lint
 | Command | Description |
 |---------|-------------|
 | `npm run build` | Build the library with tsup (outputs to `dist/`) |
+| `npm run docs` | Generate TypeDoc API documentation |
 | `npm run storybook` | Start Storybook dev server on port 6009 |
 | `npm run build-storybook` | Build static Storybook |
+| `npm run build-site` | Build complete documentation site (TypeDoc + Storybook) |
 | `npm run typecheck` | Run TypeScript type checking |
 | `npm run lint` | Run ESLint |
+
+## GitHub Pages
+
+This project automatically deploys documentation to GitHub Pages on push to `main`:
+
+- **`/`** - Landing page with navigation
+- **`/docs`** - TypeDoc API documentation
+- **`/stories`** - Interactive Storybook demos
+
+To enable, go to your repository Settings > Pages and set source to "GitHub Actions".
 
 ## License
 
