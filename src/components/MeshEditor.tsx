@@ -1,6 +1,6 @@
 import type { BufferGeometry } from 'three';
 import type { EditorMode, EditMode } from '../types';
-import { useMeshEditor } from '../hooks/useMeshEditor';
+import { useMeshEditor, type UseMeshEditorReturn } from '../hooks/useMeshEditor';
 import { VertexHandle, type VertexControlRenderProps } from './VertexHandle';
 import { EdgeLine, type EdgeControlRenderProps } from './EdgeLine';
 import { FaceHighlight, type FaceControlRenderProps } from './FaceHighlight';
@@ -66,6 +66,12 @@ export interface MeshEditorProps {
    * Supports translation, rotation, and scale.
    */
   renderFaceControl?: (props: FaceControlRenderProps) => React.ReactNode;
+  /**
+   * External editor instance for controlled mode.
+   * When provided, the component uses this editor instead of creating its own.
+   * This is useful for accessing editor methods like extrudeFace from parent components.
+   */
+  editor?: UseMeshEditorReturn;
 }
 
 /**
@@ -136,16 +142,23 @@ export function MeshEditor({
   renderVertexControl,
   renderEdgeControl,
   renderFaceControl,
+  editor: externalEditor,
 }: MeshEditorProps) {
-  const editor = useMeshEditor({
+  const internalEditor = useMeshEditor({
     geometry,
     initialMode: externalMode ?? 'object',
     initialEditMode: externalEditMode ?? 'vertex',
     onGeometryChange,
   });
 
+  // Use external editor if provided, otherwise use internal
+  const editor = externalEditor ?? internalEditor;
+
   const mode = externalMode ?? editor.state.mode;
   const editMode = externalEditMode ?? editor.state.editMode;
+
+  // Use currentGeometry from editor (supports extrusion), fall back to prop
+  const activeGeometry = editor.currentGeometry ?? geometry;
 
   // Compute the actual outline color (default to selectedColor)
   const actualOutlineColor = outlineColor ?? selectedColor;
@@ -154,12 +167,12 @@ export function MeshEditor({
   if (mode === 'object') {
     return (
       <group>
-        <mesh geometry={geometry}>
+        <mesh geometry={activeGeometry}>
           <meshStandardMaterial color="#cccccc" />
         </mesh>
         {selected && showOutline && (
           <MeshOutline
-            geometry={geometry}
+            geometry={activeGeometry}
             color={actualOutlineColor}
             thickness={outlineThickness}
           />
@@ -173,7 +186,7 @@ export function MeshEditor({
     <group>
       {/* Semi-transparent base mesh with wireframe */}
       <EditModeOverlay
-        geometry={geometry}
+        geometry={activeGeometry}
         opacity={transparentOpacity}
         color={overlayColor}
         wireframeColor={wireframeColor}

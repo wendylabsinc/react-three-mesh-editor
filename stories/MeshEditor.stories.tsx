@@ -1,10 +1,11 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, PivotControls } from '@react-three/drei';
-import { BoxGeometry, SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion } from 'three';
+import { BoxGeometry, SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, BufferGeometry, DoubleSide } from 'three';
 import { MeshEditor } from '../src/components/MeshEditor';
 import { MeshEditorMenuBar } from '../src/components/MeshEditorMenuBar';
+import { useMeshEditor } from '../src/hooks/useMeshEditor';
 import type { EditorMode, EditMode } from '../src/types';
 import type { VertexControlRenderProps } from '../src/components/VertexHandle';
 import type { EdgeControlRenderProps } from '../src/components/EdgeLine';
@@ -693,6 +694,170 @@ This is useful when you want to:
 - Implement your own control system (keyboard shortcuts, external UI, etc.)
 - Use selection state for other purposes (highlighting, info display, etc.)
 - Integrate with a different transform control library
+        `,
+      },
+    },
+  },
+};
+
+/**
+ * Inner component that uses useMeshEditor and passes it to MeshEditor.
+ * This allows us to access editor.extrudeFace while keeping selection state synchronized.
+ */
+function ExtrudableMeshInner({
+  geometry,
+  extrudeDistance,
+  onSelectionChange,
+  extrudeTrigger,
+}: {
+  geometry: BufferGeometry;
+  extrudeDistance: number;
+  onSelectionChange: (hasSelection: boolean) => void;
+  extrudeTrigger: number;
+}) {
+  const editor = useMeshEditor({
+    geometry,
+    initialMode: 'edit',
+    initialEditMode: 'face',
+  });
+
+  const selectedFaceIndex = useMemo(() => {
+    const selected = Array.from(editor.state.selectedFaces);
+    return selected.length === 1 ? selected[0] : null;
+  }, [editor.state.selectedFaces]);
+
+  // Notify parent of selection changes
+  useMemo(() => {
+    onSelectionChange(selectedFaceIndex !== null);
+  }, [selectedFaceIndex, onSelectionChange]);
+
+  // Track the last extrudeTrigger value to detect changes
+  const lastTriggerRef = useRef(extrudeTrigger);
+
+  // Handle extrude when trigger changes
+  useMemo(() => {
+    if (extrudeTrigger !== lastTriggerRef.current && selectedFaceIndex !== null) {
+      lastTriggerRef.current = extrudeTrigger;
+      editor.extrudeFace(selectedFaceIndex, extrudeDistance);
+      editor.deselectAll();
+    }
+  }, [extrudeTrigger, selectedFaceIndex, extrudeDistance, editor]);
+
+  return (
+    <MeshEditor
+      geometry={geometry}
+      mode="edit"
+      editMode="face"
+      editor={editor}
+      renderFaceControl={(props) => <TransformPivotControl {...props} />}
+    />
+  );
+}
+
+function ExtrudeFaceDemo() {
+  const [extrudeDistance, setExtrudeDistance] = useState(0.3);
+  const [key, setKey] = useState(0);
+  const [extrudeTrigger, setExtrudeTrigger] = useState(0);
+  const [hasSelection, setHasSelection] = useState(false);
+  const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
+
+  const handleSelectionChange = useCallback((selected: boolean) => {
+    setHasSelection(selected);
+  }, []);
+
+  const handleExtrude = useCallback(() => {
+    if (hasSelection) {
+      setExtrudeTrigger((t) => t + 1);
+    }
+  }, [hasSelection]);
+
+  const handleReset = useCallback(() => {
+    setKey((k) => k + 1);
+    setExtrudeTrigger(0);
+    setHasSelection(false);
+  }, []);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="m-2 flex flex-wrap items-center gap-4 rounded-md border bg-background p-3">
+        <span className="text-sm font-medium">Face Extrusion Demo</span>
+        <div className="h-6 w-px bg-border" />
+        <label className="flex items-center gap-2 text-sm">
+          Extrude Distance:
+          <input
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.05"
+            value={extrudeDistance}
+            onChange={(e) => setExtrudeDistance(parseFloat(e.target.value))}
+            className="w-24"
+          />
+          <span className="w-12 text-muted-foreground">{extrudeDistance.toFixed(2)}</span>
+        </label>
+        <button
+          onClick={handleExtrude}
+          disabled={!hasSelection}
+          className="rounded bg-orange-500 px-3 py-1 text-sm text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Extrude Selected Face
+        </button>
+        <button
+          onClick={handleReset}
+          className="rounded bg-gray-500 px-3 py-1 text-sm text-white hover:bg-gray-600"
+        >
+          Reset
+        </button>
+        {!hasSelection && (
+          <span className="text-sm text-muted-foreground">Click a face to select it first</span>
+        )}
+      </div>
+      <div style={{ flex: 1 }}>
+        <Canvas camera={{ position: [3, 3, 3], fov: 50 }}>
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[10, 10, 5]} intensity={1} />
+          <ExtrudableMeshInner
+            key={key}
+            geometry={geometry}
+            extrudeDistance={extrudeDistance}
+            onSelectionChange={handleSelectionChange}
+            extrudeTrigger={extrudeTrigger}
+          />
+          <OrbitControls makeDefault />
+          <gridHelper args={[10, 10]} />
+        </Canvas>
+      </div>
+    </div>
+  );
+}
+
+export const ExtrudeFace: Story = {
+  render: () => <ExtrudeFaceDemo />,
+  parameters: {
+    docs: {
+      description: {
+        story: `
+# Face Extrusion
+
+This demo shows the face extrusion feature.
+
+## How to use
+1. Click on a face to select it
+2. Adjust the extrusion distance with the slider
+3. Click "Extrude Selected Face" to extrude
+4. The new geometry will have the extruded face with side faces connecting to the original
+
+## Technical Details
+- Extrusion creates 3 new vertices at the face position offset by the normal
+- 7 new triangles are created: 1 for the extruded face top + 6 for the 3 side quads
+- After extrusion, you can continue editing the mesh, including selecting and transforming the new faces
+
+## API
+\`\`\`tsx
+const editor = useMeshEditor({ geometry });
+editor.extrudeFace(faceIndex, distance);
+// Returns new geometry with extruded face
+\`\`\`
         `,
       },
     },

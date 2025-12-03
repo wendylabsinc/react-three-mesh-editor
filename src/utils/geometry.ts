@@ -1,4 +1,4 @@
-import type { BufferGeometry } from 'three';
+import { BufferGeometry, BufferAttribute, Vector3 } from 'three';
 import type { VertexData, EdgeData, FaceData } from '../types';
 
 /**
@@ -404,4 +404,202 @@ export function transformVerticesAroundCenter(
   positionAttribute.needsUpdate = true;
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
+}
+
+/**
+ * Result of a face extrusion operation.
+ */
+export interface ExtrudeFaceResult {
+  /** The new geometry with extruded face */
+  geometry: BufferGeometry;
+  /** Buffer indices of the new vertices created for the extruded face */
+  extrudedVertexBufferIndices: number[];
+}
+
+/**
+ * Calculate the normal vector of a face.
+ * @internal
+ */
+function calculateFaceNormal(
+  v1: [number, number, number],
+  v2: [number, number, number],
+  v3: [number, number, number]
+): Vector3 {
+  const a = new Vector3(v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]);
+  const b = new Vector3(v3[0] - v1[0], v3[1] - v1[1], v3[2] - v1[2]);
+  return a.cross(b).normalize();
+}
+
+/**
+ * Extrude a face from a BufferGeometry.
+ *
+ * Creates a new geometry with the face extruded by the specified distance.
+ * The original face vertices are duplicated and moved along the face normal,
+ * and new side faces are created to connect the original and extruded faces.
+ *
+ * @param geometry - The original BufferGeometry
+ * @param faceIndex - Index of the face to extrude
+ * @param distance - Distance to extrude (positive = outward along normal)
+ * @param vertices - Vertex data for position lookup
+ * @param faces - Face data for the geometry
+ * @returns Result containing the new geometry and indices of new vertices
+ */
+export function extrudeFace(
+  geometry: BufferGeometry,
+  faceIndex: number,
+  distance: number,
+  vertices: VertexData[],
+  faces: FaceData[]
+): ExtrudeFaceResult {
+  const face = faces[faceIndex];
+  if (!face) {
+    throw new Error(`Face index ${faceIndex} not found`);
+  }
+
+  const positionAttribute = geometry.getAttribute('position');
+  const indexAttribute = geometry.getIndex();
+
+  if (!positionAttribute) {
+    throw new Error('Geometry has no position attribute');
+  }
+
+  // Get the original face vertices
+  const v1 = vertices[face.vertexIndices[0]];
+  const v2 = vertices[face.vertexIndices[1]];
+  const v3 = vertices[face.vertexIndices[2]];
+
+  // Calculate face normal
+  const normal = calculateFaceNormal(v1.position, v2.position, v3.position);
+
+  // Calculate new vertex positions (extruded along normal)
+  const newV1: [number, number, number] = [
+    v1.position[0] + normal.x * distance,
+    v1.position[1] + normal.y * distance,
+    v1.position[2] + normal.z * distance,
+  ];
+  const newV2: [number, number, number] = [
+    v2.position[0] + normal.x * distance,
+    v2.position[1] + normal.y * distance,
+    v2.position[2] + normal.z * distance,
+  ];
+  const newV3: [number, number, number] = [
+    v3.position[0] + normal.x * distance,
+    v3.position[1] + normal.y * distance,
+    v3.position[2] + normal.z * distance,
+  ];
+
+  // Create new position array with additional vertices
+  const oldPositions = positionAttribute.array as Float32Array;
+  const oldVertexCount = positionAttribute.count;
+  const newVertexCount = oldVertexCount + 3;
+  const newPositions = new Float32Array(newVertexCount * 3);
+
+  // Copy old positions
+  newPositions.set(oldPositions);
+
+  // Add new vertices at the end
+  const newVertexStartIndex = oldVertexCount;
+  newPositions[newVertexStartIndex * 3] = newV1[0];
+  newPositions[newVertexStartIndex * 3 + 1] = newV1[1];
+  newPositions[newVertexStartIndex * 3 + 2] = newV1[2];
+
+  newPositions[(newVertexStartIndex + 1) * 3] = newV2[0];
+  newPositions[(newVertexStartIndex + 1) * 3 + 1] = newV2[1];
+  newPositions[(newVertexStartIndex + 1) * 3 + 2] = newV2[2];
+
+  newPositions[(newVertexStartIndex + 2) * 3] = newV3[0];
+  newPositions[(newVertexStartIndex + 2) * 3 + 1] = newV3[1];
+  newPositions[(newVertexStartIndex + 2) * 3 + 2] = newV3[2];
+
+  // Get original vertex buffer indices for the face
+  let origIdx1: number, origIdx2: number, origIdx3: number;
+
+  if (v1.originalIndices && v1.originalIndices.length > 0) {
+    origIdx1 = v1.originalIndices[0];
+  } else {
+    origIdx1 = face.vertexIndices[0];
+  }
+
+  if (v2.originalIndices && v2.originalIndices.length > 0) {
+    origIdx2 = v2.originalIndices[0];
+  } else {
+    origIdx2 = face.vertexIndices[1];
+  }
+
+  if (v3.originalIndices && v3.originalIndices.length > 0) {
+    origIdx3 = v3.originalIndices[0];
+  } else {
+    origIdx3 = face.vertexIndices[2];
+  }
+
+  // New vertex buffer indices
+  const nv1 = newVertexStartIndex;
+  const nv2 = newVertexStartIndex + 1;
+  const nv3 = newVertexStartIndex + 2;
+
+  // Create new index array
+  let oldIndices: Uint16Array | Uint32Array;
+  if (indexAttribute) {
+    oldIndices = indexAttribute.array as Uint16Array | Uint32Array;
+  } else {
+    // Create indices for non-indexed geometry
+    oldIndices = new Uint16Array(oldVertexCount);
+    for (let i = 0; i < oldVertexCount; i++) {
+      oldIndices[i] = i;
+    }
+  }
+
+  // New indices: old triangles + top face (3) + 6 side triangles (18)
+  const newIndicesCount = oldIndices.length + 3 + 18;
+  const newIndices = new Uint32Array(newIndicesCount);
+
+  // Copy old indices
+  newIndices.set(oldIndices);
+
+  let idx = oldIndices.length;
+
+  // Add top face (the extruded face)
+  newIndices[idx++] = nv1;
+  newIndices[idx++] = nv2;
+  newIndices[idx++] = nv3;
+
+  // Add side faces (3 quads, each made of 2 triangles)
+  // Side 1: origIdx1-origIdx2-nv2-nv1
+  newIndices[idx++] = origIdx1;
+  newIndices[idx++] = origIdx2;
+  newIndices[idx++] = nv2;
+
+  newIndices[idx++] = origIdx1;
+  newIndices[idx++] = nv2;
+  newIndices[idx++] = nv1;
+
+  // Side 2: origIdx2-origIdx3-nv3-nv2
+  newIndices[idx++] = origIdx2;
+  newIndices[idx++] = origIdx3;
+  newIndices[idx++] = nv3;
+
+  newIndices[idx++] = origIdx2;
+  newIndices[idx++] = nv3;
+  newIndices[idx++] = nv2;
+
+  // Side 3: origIdx3-origIdx1-nv1-nv3
+  newIndices[idx++] = origIdx3;
+  newIndices[idx++] = origIdx1;
+  newIndices[idx++] = nv1;
+
+  newIndices[idx++] = origIdx3;
+  newIndices[idx++] = nv1;
+  newIndices[idx++] = nv3;
+
+  // Create new geometry
+  const newGeometry = new BufferGeometry();
+  newGeometry.setAttribute('position', new BufferAttribute(newPositions, 3));
+  newGeometry.setIndex(new BufferAttribute(newIndices, 1));
+  newGeometry.computeVertexNormals();
+  newGeometry.computeBoundingSphere();
+
+  return {
+    geometry: newGeometry,
+    extrudedVertexBufferIndices: [nv1, nv2, nv3],
+  };
 }
