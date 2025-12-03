@@ -266,6 +266,11 @@ export function useMeshEditor({
       const result = extrudeFaceUtil(currentGeometry, faceIndex, distance, vertices, faces);
       setCurrentGeometry(result.geometry);
       setGeometryVersion((v) => v + 1);
+      // Select the newly extruded face so user can immediately manipulate it
+      setState((prev) => ({
+        ...prev,
+        selectedFaces: new Set([result.extrudedFaceIndex]),
+      }));
       onGeometryChange?.(result.geometry);
     },
     [currentGeometry, vertices, faces, onGeometryChange]

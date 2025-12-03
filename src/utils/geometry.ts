@@ -414,6 +414,8 @@ export interface ExtrudeFaceResult {
   geometry: BufferGeometry;
   /** Buffer indices of the new vertices created for the extruded face */
   extrudedVertexBufferIndices: number[];
+  /** Face index of the extruded top face in the new geometry */
+  extrudedFaceIndex: number;
 }
 
 /**
@@ -598,8 +600,13 @@ export function extrudeFace(
   newGeometry.computeVertexNormals();
   newGeometry.computeBoundingSphere();
 
+  // The extruded top face is the first new triangle added after the original indices
+  // Its face index in the extracted faces will be oldIndices.length / 3
+  const extrudedFaceIndex = oldIndices.length / 3;
+
   return {
     geometry: newGeometry,
     extrudedVertexBufferIndices: [nv1, nv2, nv3],
+    extrudedFaceIndex,
   };
 }

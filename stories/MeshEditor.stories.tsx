@@ -739,7 +739,7 @@ function ExtrudableMeshInner({
     if (extrudeTrigger !== lastTriggerRef.current && selectedFaceIndex !== null) {
       lastTriggerRef.current = extrudeTrigger;
       editor.extrudeFace(selectedFaceIndex, extrudeDistance);
-      editor.deselectAll();
+      // The new extruded face is automatically selected by extrudeFace
     }
   }, [extrudeTrigger, selectedFaceIndex, extrudeDistance, editor]);
 
