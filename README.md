@@ -216,7 +216,10 @@ const editor = useMeshEditor({
 // - selectFace: (index, addToSelection?) => void
 // - deselectAll: () => void
 // - moveSelectedVertices: (delta) => void
+// - moveVerticesByDelta: (indices, delta) => void
 // - updateVertexPosition: (index, position) => void
+// - transformVertices: (indices, center, rotation, scale) => void
+// - captureInitialPositions: (indices) => void
 // - refreshGeometry: () => void
 ```
 
@@ -242,6 +245,36 @@ interface FaceData {
   index: number;
   vertexIndices: [number, number, number];
   selected: boolean;
+}
+
+// Render props for custom controls
+interface VertexControlRenderProps {
+  vertex: VertexData;
+  onMove: (position: [number, number, number]) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}
+
+interface EdgeControlRenderProps {
+  edge: EdgeData;
+  vertices: VertexData[];
+  center: [number, number, number];
+  onMoveByDelta: (delta: [number, number, number]) => void;
+  onTransform: (rotation: Quaternion, scale: [number, number, number]) => void;
+  onCaptureInitialPositions: () => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
+}
+
+interface FaceControlRenderProps {
+  face: FaceData;
+  vertices: VertexData[];
+  center: [number, number, number];
+  onMoveByDelta: (delta: [number, number, number]) => void;
+  onTransform: (rotation: Quaternion, scale: [number, number, number]) => void;
+  onCaptureInitialPositions: () => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 ```
 
