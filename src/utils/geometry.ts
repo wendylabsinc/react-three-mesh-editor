@@ -610,3 +610,394 @@ export function extrudeFace(
     extrudedFaceIndex,
   };
 }
+
+/**
+ * Data representing a point along a loop cut path.
+ */
+export interface LoopCutPoint {
+  /** Position of the cut point [x, y, z] */
+  position: [number, number, number];
+  /** Index of the edge being cut */
+  edgeIndex: number;
+  /** The two vertex indices of the edge */
+  edgeVertices: [number, number];
+  /** Parameter along the edge (0 = first vertex, 1 = second vertex) */
+  t: number;
+}
+
+/**
+ * Data representing a complete loop cut path.
+ */
+export interface LoopCutPath {
+  /** Array of cut points along the loop */
+  points: LoopCutPoint[];
+  /** Whether the path forms a closed loop */
+  isClosed: boolean;
+}
+
+/**
+ * Build an adjacency map: edge key -> array of face indices that contain this edge.
+ * @internal
+ */
+function buildEdgeToFacesMap(faces: FaceData[]): Map<string, number[]> {
+  const edgeToFaces = new Map<string, number[]>();
+
+  const addEdgeToFace = (v1: number, v2: number, faceIndex: number) => {
+    const key = v1 < v2 ? `${v1}-${v2}` : `${v2}-${v1}`;
+    if (!edgeToFaces.has(key)) {
+      edgeToFaces.set(key, []);
+    }
+    edgeToFaces.get(key)!.push(faceIndex);
+  };
+
+  for (const face of faces) {
+    const [v1, v2, v3] = face.vertexIndices;
+    addEdgeToFace(v1, v2, face.index);
+    addEdgeToFace(v2, v3, face.index);
+    addEdgeToFace(v3, v1, face.index);
+  }
+
+  return edgeToFaces;
+}
+
+/**
+ * Get the canonical edge key for two vertex indices.
+ * @internal
+ */
+function edgeKey(v1: number, v2: number): string {
+  return v1 < v2 ? `${v1}-${v2}` : `${v2}-${v1}`;
+}
+
+
+/**
+ * Find the loop cut path starting from a given edge.
+ *
+ * Uses a plane-based intersection approach: creates a cutting plane
+ * perpendicular to the start edge, finds all edges crossing this plane,
+ * and orders them by face adjacency to form a ring.
+ *
+ * @param startEdge - The edge to start the loop cut from
+ * @param edges - Array of all edges in the geometry
+ * @param faces - Array of all faces in the geometry
+ * @param vertices - Array of all vertices for position lookup
+ * @param t - Parameter along each edge for cut position (0.5 = midpoint)
+ * @returns The loop cut path with all cut points
+ */
+export function findLoopCutPath(
+  startEdge: EdgeData,
+  edges: EdgeData[],
+  faces: FaceData[],
+  vertices: VertexData[],
+  t: number = 0.5
+): LoopCutPath {
+  const v1Pos = vertices[startEdge.vertexIndices[0]]?.position;
+  const v2Pos = vertices[startEdge.vertexIndices[1]]?.position;
+
+  if (!v1Pos || !v2Pos) {
+    return { points: [], isClosed: false };
+  }
+
+  // Edge direction vector - this becomes the plane normal
+  const edgeDir = new Vector3(
+    v2Pos[0] - v1Pos[0],
+    v2Pos[1] - v1Pos[1],
+    v2Pos[2] - v1Pos[2]
+  ).normalize();
+
+  // Cut point on the start edge (plane passes through this point)
+  const planePoint = new Vector3(
+    v1Pos[0] + (v2Pos[0] - v1Pos[0]) * t,
+    v1Pos[1] + (v2Pos[1] - v1Pos[1]) * t,
+    v1Pos[2] + (v2Pos[2] - v1Pos[2]) * t
+  );
+
+  // Find all edges that cross the cutting plane
+  // (one vertex on each side of the plane)
+  interface CandidateEdge {
+    edgeIndex: number;
+    edge: EdgeData;
+    position: [number, number, number];
+    tValue: number;
+  }
+
+  const candidateEdges: CandidateEdge[] = [];
+
+  for (const edge of edges) {
+    const p1 = vertices[edge.vertexIndices[0]]?.position;
+    const p2 = vertices[edge.vertexIndices[1]]?.position;
+    if (!p1 || !p2) continue;
+
+    const p1Vec = new Vector3(p1[0], p1[1], p1[2]);
+    const p2Vec = new Vector3(p2[0], p2[1], p2[2]);
+
+    // Signed distance from each vertex to the plane
+    const d1 = p1Vec.clone().sub(planePoint).dot(edgeDir);
+    const d2 = p2Vec.clone().sub(planePoint).dot(edgeDir);
+
+    // Edge crosses the plane if signs differ (with small tolerance)
+    const threshold = 0.0001;
+    if ((d1 > threshold && d2 < -threshold) || (d1 < -threshold && d2 > threshold)) {
+      // Calculate intersection point
+      const tIntersect = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
+      const intersection: [number, number, number] = [
+        p1[0] + (p2[0] - p1[0]) * tIntersect,
+        p1[1] + (p2[1] - p1[1]) * tIntersect,
+        p1[2] + (p2[2] - p1[2]) * tIntersect,
+      ];
+
+      candidateEdges.push({
+        edgeIndex: edge.index,
+        edge,
+        position: intersection,
+        tValue: tIntersect,
+      });
+    }
+  }
+
+  if (candidateEdges.length === 0) {
+    return { points: [], isClosed: false };
+  }
+
+  // Build edge-to-faces map for adjacency lookup
+  const edgeToFaces = buildEdgeToFacesMap(faces);
+
+  // Order the candidate edges by traversing through adjacent faces
+  // Starting from the first candidate, find connected edges through face adjacency
+  const orderedPoints: LoopCutPoint[] = [];
+  const usedEdges = new Set<number>();
+
+  // Start from the first candidate edge
+  let currentCandidate = candidateEdges[0];
+
+  while (currentCandidate && !usedEdges.has(currentCandidate.edgeIndex)) {
+    usedEdges.add(currentCandidate.edgeIndex);
+
+    orderedPoints.push({
+      position: currentCandidate.position,
+      edgeIndex: currentCandidate.edgeIndex,
+      edgeVertices: [...currentCandidate.edge.vertexIndices],
+      t: currentCandidate.tValue,
+    });
+
+    // Find the next edge: look for another candidate edge that shares a face
+    const currentKey = edgeKey(
+      currentCandidate.edge.vertexIndices[0],
+      currentCandidate.edge.vertexIndices[1]
+    );
+    const adjacentFaces = edgeToFaces.get(currentKey) || [];
+
+    let nextCandidate: CandidateEdge | null = null;
+
+    // Check each adjacent face for other candidate edges
+    for (const faceIdx of adjacentFaces) {
+      const face = faces[faceIdx];
+      const faceEdges: [number, number][] = [
+        [face.vertexIndices[0], face.vertexIndices[1]],
+        [face.vertexIndices[1], face.vertexIndices[2]],
+        [face.vertexIndices[2], face.vertexIndices[0]],
+      ];
+
+      for (const faceEdge of faceEdges) {
+        const faceEdgeKey = edgeKey(faceEdge[0], faceEdge[1]);
+        if (faceEdgeKey === currentKey) continue; // Skip current edge
+
+        // Find this edge in candidates
+        const candidate = candidateEdges.find(
+          (c) =>
+            !usedEdges.has(c.edgeIndex) &&
+            edgeKey(c.edge.vertexIndices[0], c.edge.vertexIndices[1]) === faceEdgeKey
+        );
+
+        if (candidate) {
+          nextCandidate = candidate;
+          break;
+        }
+      }
+
+      if (nextCandidate) break;
+    }
+
+    currentCandidate = nextCandidate!;
+  }
+
+  // Check if we have a closed loop (all candidates used and can close back)
+  const isClosed = orderedPoints.length === candidateEdges.length && orderedPoints.length > 2;
+
+  return { points: orderedPoints, isClosed };
+}
+
+/**
+ * Result of executing a loop cut operation.
+ */
+export interface LoopCutResult {
+  /** The new geometry with the loop cut applied */
+  geometry: BufferGeometry;
+  /** Indices of the newly created vertices */
+  newVertexIndices: number[];
+}
+
+/**
+ * Execute a loop cut on a geometry.
+ *
+ * This creates new vertices at the cut points and splits the affected faces,
+ * effectively adding a new edge loop to the mesh.
+ *
+ * @param geometry - The original BufferGeometry
+ * @param loopCutPath - The loop cut path to execute
+ * @param _vertices - Vertex data (unused, mapping extracted from geometry)
+ * @param _faces - Face data (unused)
+ * @returns Result containing the new geometry and new vertex indices
+ */
+export function executeLoopCut(
+  geometry: BufferGeometry,
+  loopCutPath: LoopCutPath,
+  _vertices: VertexData[],
+  _faces: FaceData[]
+): LoopCutResult {
+  const positionAttribute = geometry.getAttribute('position');
+  const indexAttribute = geometry.getIndex();
+
+  if (!positionAttribute) {
+    throw new Error('Geometry has no position attribute');
+  }
+
+  const oldPositions = positionAttribute.array as Float32Array;
+  const oldVertexCount = positionAttribute.count;
+
+  // Build a map from raw buffer index to unique vertex index
+  // This is needed because loopCutPath uses unique vertex indices,
+  // but the geometry uses raw buffer indices
+  const { vertexIndexMap } = extractVerticesWithMappings(geometry);
+
+  // Create new vertices for each cut point
+  const newVertexCount = oldVertexCount + loopCutPath.points.length;
+  const newPositions = new Float32Array(newVertexCount * 3);
+  newPositions.set(oldPositions);
+
+  // Map from edge key (using unique vertex indices) to new vertex buffer index
+  const edgeToNewVertex = new Map<string, number>();
+  const newVertexIndices: number[] = [];
+
+  for (let i = 0; i < loopCutPath.points.length; i++) {
+    const point = loopCutPath.points[i];
+    const newIdx = oldVertexCount + i;
+
+    newPositions[newIdx * 3] = point.position[0];
+    newPositions[newIdx * 3 + 1] = point.position[1];
+    newPositions[newIdx * 3 + 2] = point.position[2];
+
+    // Store using unique vertex indices
+    const key = edgeKey(point.edgeVertices[0], point.edgeVertices[1]);
+    edgeToNewVertex.set(key, newIdx);
+    newVertexIndices.push(newIdx);
+  }
+
+  // Build set of cut edges for quick lookup (using unique vertex indices)
+  const cutEdges = new Set<string>();
+  for (const point of loopCutPath.points) {
+    cutEdges.add(edgeKey(point.edgeVertices[0], point.edgeVertices[1]));
+  }
+
+  // Process faces - split faces that have cut edges
+  const newIndices: number[] = [];
+
+  const getOldIndices = (): number[] => {
+    if (indexAttribute) {
+      return Array.from(indexAttribute.array);
+    }
+    const result: number[] = [];
+    for (let i = 0; i < oldVertexCount; i++) {
+      result.push(i);
+    }
+    return result;
+  };
+
+  const oldIndices = getOldIndices();
+
+  // Helper to get unique vertex index from raw buffer index
+  const toUniqueIndex = (rawIndex: number): number => {
+    return vertexIndexMap.get(rawIndex) ?? rawIndex;
+  };
+
+  // Process each triangle
+  for (let i = 0; i < oldIndices.length; i += 3) {
+    const v1 = oldIndices[i];
+    const v2 = oldIndices[i + 1];
+    const v3 = oldIndices[i + 2];
+
+    // Convert to unique vertex indices for edge key lookup
+    const u1 = toUniqueIndex(v1);
+    const u2 = toUniqueIndex(v2);
+    const u3 = toUniqueIndex(v3);
+
+    // Check which edges of this face are cut (using unique indices)
+    const edge1Key = edgeKey(u1, u2);
+    const edge2Key = edgeKey(u2, u3);
+    const edge3Key = edgeKey(u3, u1);
+
+    const edge1Cut = cutEdges.has(edge1Key);
+    const edge2Cut = cutEdges.has(edge2Key);
+    const edge3Cut = cutEdges.has(edge3Key);
+
+    const cutCount = (edge1Cut ? 1 : 0) + (edge2Cut ? 1 : 0) + (edge3Cut ? 1 : 0);
+
+    if (cutCount === 0) {
+      // No cuts, keep original face
+      newIndices.push(v1, v2, v3);
+    } else if (cutCount === 2) {
+      // Two edges cut - split into 3 triangles
+      const newV1 = edge1Cut ? edgeToNewVertex.get(edge1Key)! : -1;
+      const newV2 = edge2Cut ? edgeToNewVertex.get(edge2Key)! : -1;
+      const newV3 = edge3Cut ? edgeToNewVertex.get(edge3Key)! : -1;
+
+      if (edge1Cut && edge2Cut) {
+        // Cuts on v1-v2 and v2-v3
+        // Triangle layout: v1 at top, v2 at bottom-left, v3 at bottom-right
+        // Cut points: newV1 on edge v1-v2, newV2 on edge v2-v3
+        newIndices.push(v1, newV1, v3);
+        newIndices.push(newV1, newV2, v3);
+        newIndices.push(newV1, v2, newV2);
+      } else if (edge2Cut && edge3Cut) {
+        // Cuts on v2-v3 and v3-v1
+        newIndices.push(v1, v2, newV2);
+        newIndices.push(v1, newV2, newV3);
+        newIndices.push(newV2, v3, newV3);
+      } else if (edge1Cut && edge3Cut) {
+        // Cuts on v1-v2 and v3-v1
+        newIndices.push(v2, v3, newV3);
+        newIndices.push(v2, newV3, newV1);
+        newIndices.push(newV1, newV3, v1);
+      }
+    } else if (cutCount === 1) {
+      // One edge cut - split into 2 triangles
+      if (edge1Cut) {
+        const newV = edgeToNewVertex.get(edge1Key)!;
+        newIndices.push(v1, newV, v3);
+        newIndices.push(newV, v2, v3);
+      } else if (edge2Cut) {
+        const newV = edgeToNewVertex.get(edge2Key)!;
+        newIndices.push(v1, v2, newV);
+        newIndices.push(v1, newV, v3);
+      } else {
+        const newV = edgeToNewVertex.get(edge3Key)!;
+        newIndices.push(v1, v2, newV);
+        newIndices.push(newV, v3, v1);
+      }
+    } else {
+      // All three edges cut (rare case) - keep original for now
+      newIndices.push(v1, v2, v3);
+    }
+  }
+
+  // Create new geometry
+  const newGeometry = new BufferGeometry();
+  newGeometry.setAttribute('position', new BufferAttribute(newPositions, 3));
+  newGeometry.setIndex(new BufferAttribute(new Uint32Array(newIndices), 1));
+  newGeometry.computeVertexNormals();
+  newGeometry.computeBoundingSphere();
+
+  return {
+    geometry: newGeometry,
+    newVertexIndices,
+  };
+}

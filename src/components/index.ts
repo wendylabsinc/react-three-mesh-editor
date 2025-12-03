@@ -5,4 +5,5 @@ export * from './FaceHighlight';
 export * from './EditModeOverlay';
 export * from './MeshEditorMenuBar';
 export * from './MeshOutline';
+export * from './LoopCutPreview';
 export * from './ui';

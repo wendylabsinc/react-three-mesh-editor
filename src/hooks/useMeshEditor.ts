@@ -1,7 +1,18 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import type { BufferGeometry } from 'three';
 import type { EditorMode, EditMode, MeshEditorState, VertexData, EdgeData, FaceData } from '../types';
-import { extractVertices, extractEdges, extractFaces, moveVertices, updateVertexPosition, transformVerticesAroundCenter, extrudeFace as extrudeFaceUtil } from '../utils/geometry';
+import {
+  extractVertices,
+  extractEdges,
+  extractFaces,
+  moveVertices,
+  updateVertexPosition,
+  transformVerticesAroundCenter,
+  extrudeFace as extrudeFaceUtil,
+  findLoopCutPath,
+  executeLoopCut as executeLoopCutUtil,
+  type LoopCutPath,
+} from '../utils/geometry';
 
 /**
  * Options for the useMeshEditor hook.
@@ -62,6 +73,10 @@ export interface UseMeshEditorReturn {
   currentGeometry: BufferGeometry;
   /** Extrude the selected face by a distance along its normal */
   extrudeFace: (faceIndex: number, distance: number) => void;
+  /** Get the loop cut path for a given edge */
+  getLoopCutPath: (edgeIndex: number, t?: number) => LoopCutPath | null;
+  /** Execute a loop cut on the geometry */
+  executeLoopCut: (path: LoopCutPath) => void;
 }
 
 /**
@@ -276,6 +291,25 @@ export function useMeshEditor({
     [currentGeometry, vertices, faces, onGeometryChange]
   );
 
+  const handleGetLoopCutPath = useCallback(
+    (edgeIndex: number, t: number = 0.5): LoopCutPath | null => {
+      const edge = edges[edgeIndex];
+      if (!edge) return null;
+      return findLoopCutPath(edge, edges, faces, vertices, t);
+    },
+    [edges, faces, vertices]
+  );
+
+  const handleExecuteLoopCut = useCallback(
+    (path: LoopCutPath) => {
+      const result = executeLoopCutUtil(currentGeometry, path, vertices, faces);
+      setCurrentGeometry(result.geometry);
+      setGeometryVersion((v) => v + 1);
+      onGeometryChange?.(result.geometry);
+    },
+    [currentGeometry, vertices, faces, onGeometryChange]
+  );
+
   return {
     state,
     vertices,
@@ -295,5 +329,7 @@ export function useMeshEditor({
     refreshGeometry,
     currentGeometry,
     extrudeFace: handleExtrudeFace,
+    getLoopCutPath: handleGetLoopCutPath,
+    executeLoopCut: handleExecuteLoopCut,
   };
 }

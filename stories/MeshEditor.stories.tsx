@@ -1,15 +1,17 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, PivotControls } from '@react-three/drei';
-import { BoxGeometry, SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, BufferGeometry, DoubleSide } from 'three';
+import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber';
+import { OrbitControls, PivotControls, Line } from '@react-three/drei';
+import { BoxGeometry, SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, BufferGeometry, DoubleSide, Raycaster, Mesh } from 'three';
 import { MeshEditor } from '../src/components/MeshEditor';
 import { MeshEditorMenuBar } from '../src/components/MeshEditorMenuBar';
+import { LoopCutPreview } from '../src/components/LoopCutPreview';
 import { useMeshEditor } from '../src/hooks/useMeshEditor';
 import type { EditorMode, EditMode } from '../src/types';
 import type { VertexControlRenderProps } from '../src/components/VertexHandle';
 import type { EdgeControlRenderProps } from '../src/components/EdgeLine';
 import type { FaceControlRenderProps } from '../src/components/FaceHighlight';
+import type { LoopCutPath } from '../src/utils/geometry';
 import '../src/styles/globals.css';
 
 const meta: Meta<typeof MeshEditor> = {
@@ -857,6 +859,237 @@ This demo shows the face extrusion feature.
 const editor = useMeshEditor({ geometry });
 editor.extrudeFace(faceIndex, distance);
 // Returns new geometry with extruded face
+\`\`\`
+        `,
+      },
+    },
+  },
+};
+
+/**
+ * Find the nearest edge to a point on a face.
+ * Returns the edge index that is closest to the intersection point.
+ */
+function findNearestEdge(
+  intersectionPoint: Vector3,
+  faceIndex: number,
+  faces: { index: number; vertexIndices: [number, number, number] }[],
+  edges: { index: number; vertexIndices: [number, number] }[],
+  vertices: { position: [number, number, number] }[]
+): number | null {
+  // Find which triangle was hit (faceIndex is the triangle index from raycaster)
+  const face = faces[faceIndex];
+  if (!face) return null;
+
+  // Get the edges of this face
+  const faceEdges: [number, number][] = [
+    [face.vertexIndices[0], face.vertexIndices[1]],
+    [face.vertexIndices[1], face.vertexIndices[2]],
+    [face.vertexIndices[2], face.vertexIndices[0]],
+  ];
+
+  // Find the closest edge
+  let nearestEdgeIndex: number | null = null;
+  let minDistance = Infinity;
+
+  for (const [v1Idx, v2Idx] of faceEdges) {
+    const v1 = vertices[v1Idx]?.position;
+    const v2 = vertices[v2Idx]?.position;
+    if (!v1 || !v2) continue;
+
+    // Calculate distance from point to line segment
+    const p1 = new Vector3(v1[0], v1[1], v1[2]);
+    const p2 = new Vector3(v2[0], v2[1], v2[2]);
+    const lineDir = p2.clone().sub(p1);
+    const lineLength = lineDir.length();
+    lineDir.normalize();
+
+    const toPoint = intersectionPoint.clone().sub(p1);
+    let t = toPoint.dot(lineDir) / lineLength;
+    t = Math.max(0, Math.min(1, t));
+
+    const closestPoint = p1.clone().add(lineDir.multiplyScalar(t * lineLength));
+    const distance = intersectionPoint.distanceTo(closestPoint);
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      // Find the edge index
+      for (const edge of edges) {
+        const [a, b] = edge.vertexIndices;
+        if ((a === v1Idx && b === v2Idx) || (a === v2Idx && b === v1Idx)) {
+          nearestEdgeIndex = edge.index;
+          break;
+        }
+      }
+    }
+  }
+
+  return nearestEdgeIndex;
+}
+
+/**
+ * Inner component for the Loop Cut demo that uses useMeshEditor.
+ * Uses face-based hover detection like Blender - hovering anywhere on a face
+ * shows the loop cut preview for the nearest edge.
+ */
+function LoopCutMeshInner({
+  geometry,
+  onCutComplete,
+}: {
+  geometry: BufferGeometry;
+  onCutComplete: () => void;
+}) {
+  const editor = useMeshEditor({
+    geometry,
+    initialMode: 'edit',
+    initialEditMode: 'edge',
+  });
+
+  const [hoveredEdgeIndex, setHoveredEdgeIndex] = useState<number | null>(null);
+
+  // Calculate loop cut path when hovering over an edge
+  const loopCutPath = useMemo(() => {
+    if (hoveredEdgeIndex !== null) {
+      return editor.getLoopCutPath(hoveredEdgeIndex);
+    }
+    return null;
+  }, [hoveredEdgeIndex, editor]);
+
+  // Handle pointer move over mesh - find nearest edge to intersection point
+  const handlePointerMove = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      event.stopPropagation();
+      if (event.faceIndex !== undefined && event.point) {
+        const nearestEdge = findNearestEdge(
+          event.point,
+          event.faceIndex,
+          editor.faces,
+          editor.edges,
+          editor.vertices
+        );
+        setHoveredEdgeIndex(nearestEdge);
+      }
+    },
+    [editor.faces, editor.edges, editor.vertices]
+  );
+
+  const handlePointerOut = useCallback(() => {
+    setHoveredEdgeIndex(null);
+  }, []);
+
+  const handleClick = useCallback(
+    (event: ThreeEvent<MouseEvent>) => {
+      event.stopPropagation();
+      if (hoveredEdgeIndex !== null) {
+        const path = editor.getLoopCutPath(hoveredEdgeIndex);
+        if (path && path.points.length > 0) {
+          editor.executeLoopCut(path);
+          setHoveredEdgeIndex(null);
+          onCutComplete();
+        }
+      }
+    },
+    [editor, hoveredEdgeIndex, onCutComplete]
+  );
+
+  return (
+    <group>
+      {/* Interactive mesh - responds to pointer events */}
+      <mesh
+        geometry={editor.currentGeometry}
+        onPointerMove={handlePointerMove}
+        onPointerOut={handlePointerOut}
+        onClick={handleClick}
+      >
+        <meshStandardMaterial color="#6699cc" transparent opacity={0.3} side={DoubleSide} />
+      </mesh>
+      {/* Wireframe overlay */}
+      <mesh geometry={editor.currentGeometry}>
+        <meshBasicMaterial wireframe color="#ffffff" transparent opacity={0.5} />
+      </mesh>
+      {/* Loop cut preview */}
+      <LoopCutPreview path={loopCutPath} color="#ffff00" lineWidth={4} />
+    </group>
+  );
+}
+
+function LoopCutDemo() {
+  const [key, setKey] = useState(0);
+  const [cutCount, setCutCount] = useState(0);
+  // Use a simple box - each face is 2 triangles, good for testing loop cut
+  const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
+
+  const handleCutComplete = useCallback(() => {
+    setCutCount((c) => c + 1);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setKey((k) => k + 1);
+    setCutCount(0);
+  }, []);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="m-2 flex flex-wrap items-center gap-4 rounded-md border bg-background p-3">
+        <span className="text-sm font-medium">Loop Cut Demo</span>
+        <div className="h-6 w-px bg-border" />
+        <span className="text-sm text-muted-foreground">
+          Hover over an edge to see the loop cut preview. Click to cut.
+        </span>
+        <span className="text-sm">
+          Cuts made: <span className="font-mono">{cutCount}</span>
+        </span>
+        <button
+          onClick={handleReset}
+          className="rounded bg-gray-500 px-3 py-1 text-sm text-white hover:bg-gray-600"
+        >
+          Reset
+        </button>
+      </div>
+      <div style={{ flex: 1 }}>
+        <Canvas camera={{ position: [3, 3, 3], fov: 50 }}>
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[10, 10, 5]} intensity={1} />
+          <LoopCutMeshInner key={key} geometry={geometry} onCutComplete={handleCutComplete} />
+          <OrbitControls makeDefault />
+          <gridHelper args={[10, 10]} />
+        </Canvas>
+      </div>
+    </div>
+  );
+}
+
+export const LoopCut: Story = {
+  render: () => <LoopCutDemo />,
+  parameters: {
+    docs: {
+      description: {
+        story: `
+# Loop Cut
+
+This demo shows the loop cut feature, similar to Blender's Ctrl+R tool.
+
+## How to use
+1. Hover over any edge to see the animated loop cut preview (yellow dashed line)
+2. The preview shows where new vertices will be created
+3. Click on an edge to execute the loop cut
+4. New vertices and edges will be added to subdivide the mesh
+
+## Technical Details
+- The loop cut algorithm traverses perpendicular to the hovered edge
+- It finds all edges that form a ring around the mesh
+- Clicking commits the cut, creating new vertices at the midpoints
+- Affected faces are split to incorporate the new edges
+
+## API
+\`\`\`tsx
+const editor = useMeshEditor({ geometry });
+
+// Get the loop cut path for an edge
+const path = editor.getLoopCutPath(edgeIndex, t); // t = position along edge (0.5 = midpoint)
+
+// Execute the loop cut
+editor.executeLoopCut(path);
 \`\`\`
         `,
       },
