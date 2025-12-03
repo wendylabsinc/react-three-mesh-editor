@@ -5,18 +5,36 @@ import { Matrix4, Vector3 } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { VertexData } from '../types';
 
+/**
+ * Props for the VertexHandle component.
+ */
 export interface VertexHandleProps {
+  /** The vertex data to render */
   vertex: VertexData;
+  /** Size of the vertex sphere in world units @default 0.05 */
   size?: number;
+  /** Whether this vertex is selected */
   selected?: boolean;
+  /** Color when selected @default '#ff6b00' */
   selectedColor?: string;
+  /** Default color when not selected @default '#4a90d9' */
   defaultColor?: string;
+  /** Color when hovered @default '#7bb3e0' */
   hoverColor?: string;
+  /** Callback when vertex is clicked for selection */
   onSelect?: (index: number, addToSelection: boolean) => void;
+  /** Callback when vertex position changes (on drag end) */
   onMove?: (index: number, position: [number, number, number]) => void;
+  /** Callback during drag for real-time updates */
   onMoveRealtime?: (index: number, position: [number, number, number]) => void;
 }
 
+/**
+ * Interactive vertex handle component.
+ *
+ * Renders a sphere at the vertex position that can be selected and moved
+ * using PivotControls. Supports click selection and drag movement.
+ */
 export function VertexHandle({
   vertex,
   size = 0.05,

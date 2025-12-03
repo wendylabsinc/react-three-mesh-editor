@@ -7,25 +7,67 @@ import { EdgeLine } from './EdgeLine';
 import { FaceHighlight } from './FaceHighlight';
 import { EditModeOverlay } from './EditModeOverlay';
 
+/**
+ * Props for the MeshEditor component.
+ */
 export interface MeshEditorProps {
+  /** The Three.js BufferGeometry to edit */
   geometry: BufferGeometry;
+  /** Current editor mode. When provided, component is controlled. */
   mode?: EditorMode;
+  /** Current edit sub-mode. When provided, component is controlled. */
   editMode?: EditMode;
+  /** Callback fired when mode changes (for controlled usage) */
   onModeChange?: (mode: EditorMode) => void;
+  /** Callback fired when edit mode changes (for controlled usage) */
   onEditModeChange?: (editMode: EditMode) => void;
+  /** Callback fired when geometry vertices are modified */
   onGeometryChange?: (geometry: BufferGeometry) => void;
+  /** Size of vertex handle spheres in world units @default 0.05 */
   vertexSize?: number;
+  /** Width of edge lines in pixels @default 2 */
   edgeLineWidth?: number;
+  /** Color of selected elements @default '#ff6b00' */
   selectedColor?: string;
+  /** Default color of unselected vertices @default '#4a90d9' */
   defaultVertexColor?: string;
+  /** Default color of unselected edges @default '#ffffff' */
   defaultEdgeColor?: string;
+  /** Default color of unselected faces @default '#4a90d9' */
   defaultFaceColor?: string;
+  /** Color of hovered elements @default '#7bb3e0' */
   hoverColor?: string;
+  /** Opacity of semi-transparent elements @default 0.3 */
   transparentOpacity?: number;
+  /** Color of the mesh overlay in edit mode @default '#6699cc' */
   overlayColor?: string;
+  /** Color of the wireframe in edit mode @default '#ffffff' */
   wireframeColor?: string;
 }
 
+/**
+ * Main mesh editor component for React Three Fiber.
+ *
+ * Provides Blender-like mesh editing with object and edit modes.
+ * In edit mode, supports vertex, edge, and face selection/manipulation
+ * with PivotControls for translation, rotation, and scaling.
+ *
+ * @example
+ * ```tsx
+ * import { Canvas } from '@react-three/fiber';
+ * import { MeshEditor } from 'react-three-mesh-editor';
+ * import { BoxGeometry } from 'three';
+ *
+ * function App() {
+ *   const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
+ *   return (
+ *     <Canvas>
+ *       <MeshEditor geometry={geometry} mode="edit" editMode="vertex" />
+ *     </Canvas>
+ *   );
+ * }
+ * ```
+ */
 export function MeshEditor({
   geometry,
   mode: externalMode,

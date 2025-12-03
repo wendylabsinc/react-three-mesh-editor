@@ -210,10 +210,24 @@ npm run build
 
 # Run Storybook for development
 npm run storybook
+# Storybook runs at http://localhost:6009
 
 # Type check
 npm run typecheck
+
+# Lint
+npm run lint
 ```
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Build the library with tsup (outputs to `dist/`) |
+| `npm run storybook` | Start Storybook dev server on port 6009 |
+| `npm run build-storybook` | Build static Storybook |
+| `npm run typecheck` | Run TypeScript type checking |
+| `npm run lint` | Run ESLint |
 
 ## License
 

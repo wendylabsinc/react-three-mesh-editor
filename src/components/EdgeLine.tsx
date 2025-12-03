@@ -4,25 +4,45 @@ import { Matrix4, Vector3, Quaternion } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
 import type { EdgeData, VertexData } from '../types';
 
+/**
+ * Props for the EdgeLine component.
+ */
 export interface EdgeLineProps {
+  /** The edge data to render */
   edge: EdgeData;
+  /** Array of all vertices for position lookup */
   vertices: VertexData[];
+  /** Whether this edge is selected */
   selected?: boolean;
+  /** Color when selected @default '#ff6b00' */
   selectedColor?: string;
+  /** Default color when not selected @default '#ffffff' */
   defaultColor?: string;
+  /** Color when hovered @default '#7bb3e0' */
   hoverColor?: string;
+  /** Width of the line in pixels @default 2 */
   lineWidth?: number;
+  /** Callback when edge is clicked for selection */
   onSelect?: (index: number, addToSelection: boolean) => void;
+  /** Callback to move vertices by a delta */
   onMoveVertices?: (vertexIndices: number[], delta: [number, number, number]) => void;
+  /** Callback to apply rotation/scale transformation */
   onTransformVertices?: (
     vertexIndices: number[],
     center: [number, number, number],
     rotation: { x: number; y: number; z: number; w: number },
     scale: [number, number, number]
   ) => void;
+  /** Callback to capture initial positions before transform */
   onCaptureInitialPositions?: (vertexIndices: number[]) => void;
 }
 
+/**
+ * Interactive edge line component.
+ *
+ * Renders a line between two vertices that can be selected and manipulated
+ * using PivotControls. Supports translation, rotation, and scaling.
+ */
 export function EdgeLine({
   edge,
   vertices,

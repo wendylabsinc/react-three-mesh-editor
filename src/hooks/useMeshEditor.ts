@@ -3,37 +3,83 @@ import type { BufferGeometry } from 'three';
 import type { EditorMode, EditMode, MeshEditorState, VertexData, EdgeData, FaceData } from '../types';
 import { extractVertices, extractEdges, extractFaces, moveVertices, updateVertexPosition, transformVerticesAroundCenter } from '../utils/geometry';
 
+/**
+ * Options for the useMeshEditor hook.
+ */
 export interface UseMeshEditorOptions {
+  /** The Three.js BufferGeometry to edit */
   geometry: BufferGeometry;
+  /** Initial editor mode @default 'object' */
   initialMode?: EditorMode;
+  /** Initial edit sub-mode @default 'vertex' */
   initialEditMode?: EditMode;
+  /** Callback fired when geometry is modified */
   onGeometryChange?: (geometry: BufferGeometry) => void;
 }
 
+/**
+ * Return value of the useMeshEditor hook.
+ */
 export interface UseMeshEditorReturn {
+  /** Current editor state including mode and selections */
   state: MeshEditorState;
+  /** Array of deduplicated vertices extracted from geometry */
   vertices: VertexData[];
+  /** Array of edges extracted from geometry */
   edges: EdgeData[];
+  /** Array of faces extracted from geometry */
   faces: FaceData[];
+  /** Set the editor mode (object or edit) */
   setMode: (mode: EditorMode) => void;
+  /** Set the edit sub-mode (vertex, edge, or face) */
   setEditMode: (editMode: EditMode) => void;
+  /** Select or toggle a vertex. Use addToSelection for multi-select. */
   selectVertex: (index: number, addToSelection?: boolean) => void;
+  /** Select or toggle an edge. Use addToSelection for multi-select. */
   selectEdge: (index: number, addToSelection?: boolean) => void;
+  /** Select or toggle a face. Use addToSelection for multi-select. */
   selectFace: (index: number, addToSelection?: boolean) => void;
+  /** Clear all selections */
   deselectAll: () => void;
+  /** Move all selected vertices by a delta [x, y, z] */
   moveSelectedVertices: (delta: [number, number, number]) => void;
+  /** Move specific vertices by a delta [x, y, z] */
   moveVerticesByDelta: (vertexIndices: number[], delta: [number, number, number]) => void;
+  /** Set a vertex to an absolute position */
   updateVertexPosition: (index: number, position: [number, number, number]) => void;
+  /** Apply rotation and scale transformation around a center point */
   transformVertices: (
     vertexIndices: number[],
     center: [number, number, number],
     rotation: { x: number; y: number; z: number; w: number },
     scale: [number, number, number]
   ) => void;
+  /** Capture vertex positions before a transform operation (for undo/accumulation) */
   captureInitialPositions: (vertexIndices: number[]) => void;
+  /** Force re-extraction of geometry data */
   refreshGeometry: () => void;
 }
 
+/**
+ * Hook for managing mesh editor state and operations.
+ *
+ * Provides all the state and methods needed to implement a mesh editor,
+ * including selection management, vertex manipulation, and geometry updates.
+ *
+ * @example
+ * ```tsx
+ * const editor = useMeshEditor({
+ *   geometry: myGeometry,
+ *   onGeometryChange: (geo) => console.log('Geometry changed'),
+ * });
+ *
+ * // Select a vertex
+ * editor.selectVertex(0);
+ *
+ * // Move selected vertices
+ * editor.moveSelectedVertices([0.1, 0, 0]);
+ * ```
+ */
 export function useMeshEditor({
   geometry,
   initialMode = 'object',

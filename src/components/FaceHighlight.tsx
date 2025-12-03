@@ -5,25 +5,45 @@ import { BufferGeometry, Float32BufferAttribute, DoubleSide, Matrix4, Vector3, Q
 import type { ThreeEvent } from '@react-three/fiber';
 import type { FaceData, VertexData } from '../types';
 
+/**
+ * Props for the FaceHighlight component.
+ */
 export interface FaceHighlightProps {
+  /** The face data to render */
   face: FaceData;
+  /** Array of all vertices for position lookup */
   vertices: VertexData[];
+  /** Whether this face is selected */
   selected?: boolean;
+  /** Color when selected @default '#ff6b00' */
   selectedColor?: string;
+  /** Default color when not selected @default '#4a90d9' */
   defaultColor?: string;
+  /** Color when hovered @default '#7bb3e0' */
   hoverColor?: string;
+  /** Opacity of the face @default 0.3 */
   opacity?: number;
+  /** Callback when face is clicked for selection */
   onSelect?: (index: number, addToSelection: boolean) => void;
+  /** Callback to move vertices by a delta */
   onMoveVertices?: (vertexIndices: number[], delta: [number, number, number]) => void;
+  /** Callback to apply rotation/scale transformation */
   onTransformVertices?: (
     vertexIndices: number[],
     center: [number, number, number],
     rotation: { x: number; y: number; z: number; w: number },
     scale: [number, number, number]
   ) => void;
+  /** Callback to capture initial positions before transform */
   onCaptureInitialPositions?: (vertexIndices: number[]) => void;
 }
 
+/**
+ * Interactive face highlight component.
+ *
+ * Renders a semi-transparent triangle for a face that can be selected
+ * and manipulated using PivotControls. Supports translation, rotation, and scaling.
+ */
 export function FaceHighlight({
   face,
   vertices,

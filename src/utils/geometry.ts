@@ -1,21 +1,41 @@
 import type { BufferGeometry } from 'three';
 import type { VertexData, EdgeData, FaceData } from '../types';
 
-// Round to 6 decimal places to handle floating point precision issues
+/**
+ * Round to 6 decimal places to handle floating point precision issues.
+ * @internal
+ */
 function roundPosition(value: number): number {
   return Math.round(value * 1000000) / 1000000;
 }
 
+/**
+ * Create a unique key for a 3D position.
+ * @internal
+ */
 function positionKey(x: number, y: number, z: number): string {
   return `${roundPosition(x)},${roundPosition(y)},${roundPosition(z)}`;
 }
 
+/**
+ * Result of extracting vertices with position deduplication mappings.
+ */
 export interface GeometryMappings {
+  /** Array of unique vertices (deduplicated by position) */
   uniqueVertices: VertexData[];
-  // Maps original vertex index to unique vertex index
+  /** Maps original buffer index to unique vertex index */
   vertexIndexMap: Map<number, number>;
 }
 
+/**
+ * Extract vertices from a BufferGeometry with position deduplication.
+ *
+ * Vertices at the same position are merged into a single VertexData entry,
+ * with originalIndices tracking all buffer indices that share that position.
+ *
+ * @param geometry - The Three.js BufferGeometry to extract from
+ * @returns Mappings containing unique vertices and index mapping
+ */
 export function extractVerticesWithMappings(geometry: BufferGeometry): GeometryMappings {
   const positionAttribute = geometry.getAttribute('position');
   if (!positionAttribute) return { uniqueVertices: [], vertexIndexMap: new Map() };
@@ -61,10 +81,24 @@ export function extractVerticesWithMappings(geometry: BufferGeometry): GeometryM
   return { uniqueVertices, vertexIndexMap };
 }
 
+/**
+ * Extract unique vertices from a BufferGeometry.
+ *
+ * @param geometry - The Three.js BufferGeometry to extract from
+ * @returns Array of deduplicated vertices
+ */
 export function extractVertices(geometry: BufferGeometry): VertexData[] {
   return extractVerticesWithMappings(geometry).uniqueVertices;
 }
 
+/**
+ * Extract edges from a BufferGeometry.
+ *
+ * Edges are deduplicated and reference unique vertex indices.
+ *
+ * @param geometry - The Three.js BufferGeometry to extract from
+ * @returns Array of unique edges
+ */
 export function extractEdges(geometry: BufferGeometry): EdgeData[] {
   const { vertexIndexMap } = extractVerticesWithMappings(geometry);
   const index = geometry.getIndex();
@@ -112,6 +146,14 @@ export function extractEdges(geometry: BufferGeometry): EdgeData[] {
   return edges;
 }
 
+/**
+ * Extract faces (triangles) from a BufferGeometry.
+ *
+ * Faces are deduplicated and reference unique vertex indices.
+ *
+ * @param geometry - The Three.js BufferGeometry to extract from
+ * @returns Array of unique faces
+ */
 export function extractFaces(geometry: BufferGeometry): FaceData[] {
   const { vertexIndexMap } = extractVerticesWithMappings(geometry);
   const index = geometry.getIndex();
@@ -156,6 +198,16 @@ export function extractFaces(geometry: BufferGeometry): FaceData[] {
   return faces;
 }
 
+/**
+ * Update a vertex to an absolute position.
+ *
+ * Handles deduplicated vertices by updating all original buffer indices.
+ *
+ * @param geometry - The BufferGeometry to modify
+ * @param vertexIndex - Index of the unique vertex
+ * @param position - New absolute position [x, y, z]
+ * @param vertices - Optional vertex data for deduplication mapping
+ */
 export function updateVertexPosition(
   geometry: BufferGeometry,
   vertexIndex: number,
@@ -179,6 +231,16 @@ export function updateVertexPosition(
   geometry.computeBoundingSphere();
 }
 
+/**
+ * Move multiple vertices by a delta offset.
+ *
+ * Handles deduplicated vertices by updating all original buffer indices.
+ *
+ * @param geometry - The BufferGeometry to modify
+ * @param vertexIndices - Array of unique vertex indices to move
+ * @param delta - Offset to apply [dx, dy, dz]
+ * @param vertices - Optional vertex data for deduplication mapping
+ */
 export function moveVertices(
   geometry: BufferGeometry,
   vertexIndices: number[],
@@ -213,6 +275,13 @@ export function moveVertices(
   geometry.computeBoundingSphere();
 }
 
+/**
+ * Calculate the center point of a face.
+ *
+ * @param face - The face data
+ * @param vertices - Array of vertices for position lookup
+ * @returns Center position [x, y, z]
+ */
 export function getFaceCenter(face: FaceData, vertices: VertexData[]): [number, number, number] {
   const v1 = vertices[face.vertexIndices[0]];
   const v2 = vertices[face.vertexIndices[1]];
@@ -225,6 +294,13 @@ export function getFaceCenter(face: FaceData, vertices: VertexData[]): [number, 
   ];
 }
 
+/**
+ * Calculate the center point of an edge.
+ *
+ * @param edge - The edge data
+ * @param vertices - Array of vertices for position lookup
+ * @returns Center position [x, y, z]
+ */
 export function getEdgeCenter(edge: EdgeData, vertices: VertexData[]): [number, number, number] {
   const v1 = vertices[edge.vertexIndices[0]];
   const v2 = vertices[edge.vertexIndices[1]];
@@ -236,6 +312,20 @@ export function getEdgeCenter(edge: EdgeData, vertices: VertexData[]): [number, 
   ];
 }
 
+/**
+ * Apply rotation and scale transformation to vertices around a center point.
+ *
+ * Uses quaternion rotation and scales vertices relative to the center.
+ * Uses initial positions if provided to prevent cumulative drift during dragging.
+ *
+ * @param geometry - The BufferGeometry to modify
+ * @param vertexIndices - Array of unique vertex indices to transform
+ * @param center - Center point for the transformation
+ * @param rotation - Quaternion rotation as {x, y, z, w}
+ * @param scale - Scale factors [sx, sy, sz]
+ * @param vertices - Optional vertex data for deduplication mapping
+ * @param initialPositions - Optional captured initial positions
+ */
 export function transformVerticesAroundCenter(
   geometry: BufferGeometry,
   vertexIndices: number[],
