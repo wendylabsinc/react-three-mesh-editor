@@ -7,7 +7,7 @@ A React Three Fiber library for mesh editing similar to Blender, with object/edi
 
 **[Documentation](https://wendylabsinc.github.io/react-three-mesh-editor/)** | **[Storybook](https://wendylabsinc.github.io/react-three-mesh-editor/stories)** | **[API Reference](https://wendylabsinc.github.io/react-three-mesh-editor/docs)**
 
-<video src="https://github.com/wendylabsinc/react-three-mesh-editor/raw/main/demo.mp4" controls width="100%"></video>
+![Demo](./demo.gif)
 
 ## Installation
 

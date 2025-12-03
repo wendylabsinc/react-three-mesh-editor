@@ -1,6 +1,6 @@
 {
   "name": "react-three-mesh-editor",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "A react-three-fiber library for mesh editing similar to Blender with object/edit modes, vertex/edge/face selection",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
