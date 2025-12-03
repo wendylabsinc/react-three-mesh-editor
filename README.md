@@ -1,0 +1,220 @@
+# react-three-mesh-editor
+
+A React Three Fiber library for mesh editing similar to Blender, with object/edit modes and vertex/edge/face selection.
+
+## Installation
+
+```bash
+npm install react-three-mesh-editor
+```
+
+### Peer Dependencies
+
+This library requires the following peer dependencies:
+
+```bash
+npm install react react-dom three @react-three/fiber @react-three/drei
+```
+
+## Basic Usage
+
+The core `MeshEditor` component can be used standalone without any UI dependencies:
+
+```tsx
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
+import { MeshEditor } from 'react-three-mesh-editor';
+import { BoxGeometry } from 'three';
+import { useMemo, useState } from 'react';
+
+function App() {
+  const [mode, setMode] = useState<'object' | 'edit'>('edit');
+  const [editMode, setEditMode] = useState<'vertex' | 'edge' | 'face'>('vertex');
+  const geometry = useMemo(() => new BoxGeometry(1, 1, 1, 2, 2, 2), []);
+
+  return (
+    <Canvas camera={{ position: [3, 3, 3] }}>
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[10, 10, 5]} />
+      <MeshEditor
+        geometry={geometry}
+        mode={mode}
+        editMode={editMode}
+      />
+      <OrbitControls />
+    </Canvas>
+  );
+}
+```
+
+## Features
+
+- **Object Mode**: Solid mesh rendering
+- **Edit Mode**: Semi-transparent mesh with wireframe overlay
+  - **Vertex Mode**: Small cubes at each vertex that can be selected and moved using PivotControls
+  - **Edge Mode**: Lines connecting vertices that can be selected
+  - **Face Mode**: Triangular faces that can be selected
+
+### Controls
+
+- Click a vertex/edge/face to select it
+- Shift+Click to add to selection
+- In vertex mode, drag the PivotControls gizmo to move selected vertices
+
+## Components
+
+### MeshEditor
+
+The main 3D editor component (used inside R3F Canvas).
+
+```tsx
+interface MeshEditorProps {
+  geometry: BufferGeometry;
+  mode?: 'object' | 'edit';
+  editMode?: 'vertex' | 'edge' | 'face';
+  onModeChange?: (mode: EditorMode) => void;
+  onEditModeChange?: (editMode: EditMode) => void;
+  onGeometryChange?: (geometry: BufferGeometry) => void;
+  vertexSize?: number;
+  edgeLineWidth?: number;
+  selectedColor?: string;
+  defaultVertexColor?: string;
+  defaultEdgeColor?: string;
+  defaultFaceColor?: string;
+  hoverColor?: string;
+  transparentOpacity?: number;
+  overlayColor?: string;
+  wireframeColor?: string;
+}
+```
+
+### MeshEditorMenuBar (Optional)
+
+A pre-built UI component for controlling the editor modes. This component uses Tailwind CSS and shadcn/ui components.
+
+```tsx
+import { MeshEditorMenuBar } from 'react-three-mesh-editor';
+
+<MeshEditorMenuBar
+  mode={mode}
+  editMode={editMode}
+  onModeChange={setMode}
+  onEditModeChange={setEditMode}
+/>
+```
+
+## Using the Optional UI Components
+
+The `MeshEditorMenuBar` and other UI components are built with Tailwind CSS v4. If you want to use them, you'll need to configure your project to include the library's styles.
+
+### Tailwind CSS v4
+
+Add the library to your CSS sources using the `@source` directive:
+
+```css
+/* app.css */
+@import "tailwindcss";
+@source "../node_modules/react-three-mesh-editor/dist";
+```
+
+### Build Your Own UI
+
+You can skip the UI components entirely and build your own controls using the exported types and hooks:
+
+```tsx
+import { useMeshEditor } from 'react-three-mesh-editor';
+import type { EditorMode, EditMode } from 'react-three-mesh-editor';
+
+function MyCustomControls({ geometry }) {
+  const editor = useMeshEditor({ geometry });
+
+  return (
+    <div>
+      <button onClick={() => editor.setMode('object')}>Object</button>
+      <button onClick={() => editor.setMode('edit')}>Edit</button>
+      {editor.state.mode === 'edit' && (
+        <>
+          <button onClick={() => editor.setEditMode('vertex')}>Vertex</button>
+          <button onClick={() => editor.setEditMode('edge')}>Edge</button>
+          <button onClick={() => editor.setEditMode('face')}>Face</button>
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+## Hooks
+
+### useMeshEditor
+
+A hook for managing mesh editor state:
+
+```tsx
+const editor = useMeshEditor({
+  geometry: BufferGeometry,
+  initialMode?: 'object' | 'edit',
+  initialEditMode?: 'vertex' | 'edge' | 'face',
+  onGeometryChange?: (geometry: BufferGeometry) => void,
+});
+
+// Returns:
+// - state: { mode, editMode, selectedVertices, selectedEdges, selectedFaces }
+// - vertices: VertexData[]
+// - edges: EdgeData[]
+// - faces: FaceData[]
+// - setMode: (mode) => void
+// - setEditMode: (editMode) => void
+// - selectVertex: (index, addToSelection?) => void
+// - selectEdge: (index, addToSelection?) => void
+// - selectFace: (index, addToSelection?) => void
+// - deselectAll: () => void
+// - moveSelectedVertices: (delta) => void
+// - updateVertexPosition: (index, position) => void
+// - refreshGeometry: () => void
+```
+
+## Types
+
+```tsx
+type EditorMode = 'object' | 'edit';
+type EditMode = 'vertex' | 'edge' | 'face';
+
+interface VertexData {
+  index: number;
+  position: [number, number, number];
+  selected: boolean;
+}
+
+interface EdgeData {
+  index: number;
+  vertexIndices: [number, number];
+  selected: boolean;
+}
+
+interface FaceData {
+  index: number;
+  vertexIndices: [number, number, number];
+  selected: boolean;
+}
+```
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Build the library
+npm run build
+
+# Run Storybook for development
+npm run storybook
+
+# Type check
+npm run typecheck
+```
+
+## License
+
+MIT
