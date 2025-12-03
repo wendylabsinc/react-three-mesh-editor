@@ -139,6 +139,8 @@ export function MeshEditor({
             opacity={transparentOpacity}
             onSelect={editor.selectFace}
             onMoveVertices={editor.moveVerticesByDelta}
+            onTransformVertices={editor.transformVertices}
+            onCaptureInitialPositions={editor.captureInitialPositions}
           />
         ))}
     </group>

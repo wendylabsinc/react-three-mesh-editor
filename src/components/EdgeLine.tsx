@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { Line, PivotControls } from '@react-three/drei';
 import { Matrix4, Vector3, Quaternion } from 'three';
 import type { ThreeEvent } from '@react-three/fiber';
@@ -40,11 +40,10 @@ export function EdgeLine({
   const [isDragging, setIsDragging] = useState(false);
   // Store cumulative delta applied so far during this drag session
   const appliedDeltaRef = useRef<[number, number, number]>([0, 0, 0]);
-  // Store the initial matrix when selection starts - this prevents feedback loop
-  const initialMatrixRef = useRef<Matrix4 | null>(null);
-  const wasSelectedRef = useRef(false);
   // Store initial vertex positions for rotation/scale operations
   const initialVertexPositionsRef = useRef<Map<number, [number, number, number]>>(new Map());
+  // Track previous selected state to detect selection changes
+  const prevSelectedRef = useRef(selected);
 
   const points = useMemo(() => {
     const v1 = vertices[edge.vertexIndices[0]];
@@ -64,20 +63,24 @@ export function EdgeLine({
     ];
   }, [edge.vertexIndices, vertices]);
 
-  // Capture initial position when edge becomes selected
-  useEffect(() => {
-    if (selected && !wasSelectedRef.current) {
-      // Just became selected - capture the initial center position
-      const matrix = new Matrix4();
-      matrix.setPosition(edgeCenter[0], edgeCenter[1], edgeCenter[2]);
-      initialMatrixRef.current = matrix;
-    }
-    if (!selected) {
-      // Deselected - clear the matrix
-      initialMatrixRef.current = null;
-    }
-    wasSelectedRef.current = selected;
-  }, [selected, edgeCenter]);
+  // Use state for initialMatrix so it triggers immediate re-render
+  const [initialMatrix, setInitialMatrix] = useState<Matrix4 | null>(null);
+  // Keep a ref in sync for use in callbacks
+  const initialMatrixRef = useRef<Matrix4 | null>(null);
+
+  // Synchronously update matrix when selection changes
+  if (selected && !prevSelectedRef.current) {
+    // Just became selected - capture the initial center position immediately
+    const matrix = new Matrix4();
+    matrix.setPosition(edgeCenter[0], edgeCenter[1], edgeCenter[2]);
+    initialMatrixRef.current = matrix;
+    setInitialMatrix(matrix);
+  } else if (!selected && prevSelectedRef.current) {
+    // Just became deselected
+    initialMatrixRef.current = null;
+    setInitialMatrix(null);
+  }
+  prevSelectedRef.current = selected;
 
   const handleClick = useCallback(
     (event: ThreeEvent<MouseEvent>) => {
@@ -171,6 +174,7 @@ export function EdgeLine({
           const newMatrix = new Matrix4();
           newMatrix.setPosition(position.x, position.y, position.z);
           initialMatrixRef.current = newMatrix;
+          setInitialMatrix(newMatrix);
 
           // Reset applied delta since we're resetting the reference point
           appliedDeltaRef.current = [0, 0, 0];
@@ -201,12 +205,12 @@ export function EdgeLine({
     />
   );
 
-  if (selected && onMoveVertices && initialMatrixRef.current) {
+  if (selected && onMoveVertices && initialMatrix) {
     return (
       <group>
         {lineElement}
         <PivotControls
-          matrix={initialMatrixRef.current}
+          matrix={initialMatrix}
           anchor={[0, 0, 0]}
           depthTest={false}
           scale={0.3}
