@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import type { BufferGeometry } from 'three';
 import type { EditorMode, EditMode, MeshEditorState, VertexData, EdgeData, FaceData } from '../types';
-import { extractVertices, extractEdges, extractFaces, moveVertices, updateVertexPosition, transformVerticesAroundCenter } from '../utils/geometry';
+import { extractVertices, extractEdges, extractFaces, moveVertices, updateVertexPosition, transformVerticesAroundCenter, extrudeFace as extrudeFaceUtil } from '../utils/geometry';
 
 /**
  * Options for the useMeshEditor hook.
@@ -58,6 +58,10 @@ export interface UseMeshEditorReturn {
   captureInitialPositions: (vertexIndices: number[]) => void;
   /** Force re-extraction of geometry data */
   refreshGeometry: () => void;
+  /** Current geometry (may differ from input if extrusions have occurred) */
+  currentGeometry: BufferGeometry;
+  /** Extrude the selected face by a distance along its normal */
+  extrudeFace: (faceIndex: number, distance: number) => void;
 }
 
 /**
@@ -96,26 +100,29 @@ export function useMeshEditor({
 
   const [geometryVersion, setGeometryVersion] = useState(0);
 
+  // Track current geometry (may be replaced during extrusion)
+  const [currentGeometry, setCurrentGeometry] = useState<BufferGeometry>(geometry);
+
   // Store initial positions for rotation/scale operations
   const initialPositionsRef = useRef<Map<number, [number, number, number]>>(new Map());
 
   // geometryVersion is used to force re-extraction when geometry buffer changes
   const vertices = useMemo(
-    () => extractVertices(geometry),
+    () => extractVertices(currentGeometry),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [geometry, geometryVersion]
+    [currentGeometry, geometryVersion]
   );
 
   const edges = useMemo(
-    () => extractEdges(geometry),
+    () => extractEdges(currentGeometry),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [geometry, geometryVersion]
+    [currentGeometry, geometryVersion]
   );
 
   const faces = useMemo(
-    () => extractFaces(geometry),
+    () => extractFaces(currentGeometry),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [geometry, geometryVersion]
+    [currentGeometry, geometryVersion]
   );
 
   const setMode = useCallback((mode: EditorMode) => {
@@ -188,30 +195,30 @@ export function useMeshEditor({
       const indices = Array.from(state.selectedVertices);
       if (indices.length === 0) return;
 
-      moveVertices(geometry, indices, delta, vertices);
+      moveVertices(currentGeometry, indices, delta, vertices);
       setGeometryVersion((v) => v + 1);
-      onGeometryChange?.(geometry);
+      onGeometryChange?.(currentGeometry);
     },
-    [geometry, state.selectedVertices, onGeometryChange, vertices]
+    [currentGeometry, state.selectedVertices, onGeometryChange, vertices]
   );
 
   const handleUpdateVertexPosition = useCallback(
     (index: number, position: [number, number, number]) => {
-      updateVertexPosition(geometry, index, position, vertices);
+      updateVertexPosition(currentGeometry, index, position, vertices);
       setGeometryVersion((v) => v + 1);
-      onGeometryChange?.(geometry);
+      onGeometryChange?.(currentGeometry);
     },
-    [geometry, onGeometryChange, vertices]
+    [currentGeometry, onGeometryChange, vertices]
   );
 
   const handleMoveVerticesByDelta = useCallback(
     (vertexIndices: number[], delta: [number, number, number]) => {
       if (vertexIndices.length === 0) return;
-      moveVertices(geometry, vertexIndices, delta, vertices);
+      moveVertices(currentGeometry, vertexIndices, delta, vertices);
       setGeometryVersion((v) => v + 1);
-      onGeometryChange?.(geometry);
+      onGeometryChange?.(currentGeometry);
     },
-    [geometry, onGeometryChange, vertices]
+    [currentGeometry, onGeometryChange, vertices]
   );
 
   const refreshGeometry = useCallback(() => {
@@ -240,7 +247,7 @@ export function useMeshEditor({
     ) => {
       if (vertexIndices.length === 0) return;
       transformVerticesAroundCenter(
-        geometry,
+        currentGeometry,
         vertexIndices,
         center,
         rotation,
@@ -249,9 +256,24 @@ export function useMeshEditor({
         initialPositionsRef.current
       );
       setGeometryVersion((v) => v + 1);
-      onGeometryChange?.(geometry);
+      onGeometryChange?.(currentGeometry);
     },
-    [geometry, onGeometryChange, vertices]
+    [currentGeometry, onGeometryChange, vertices]
+  );
+
+  const handleExtrudeFace = useCallback(
+    (faceIndex: number, distance: number) => {
+      const result = extrudeFaceUtil(currentGeometry, faceIndex, distance, vertices, faces);
+      setCurrentGeometry(result.geometry);
+      setGeometryVersion((v) => v + 1);
+      // Select the newly extruded face so user can immediately manipulate it
+      setState((prev) => ({
+        ...prev,
+        selectedFaces: new Set([result.extrudedFaceIndex]),
+      }));
+      onGeometryChange?.(result.geometry);
+    },
+    [currentGeometry, vertices, faces, onGeometryChange]
   );
 
   return {
@@ -271,5 +293,7 @@ export function useMeshEditor({
     transformVertices: handleTransformVertices,
     captureInitialPositions: handleCaptureInitialPositions,
     refreshGeometry,
+    currentGeometry,
+    extrudeFace: handleExtrudeFace,
   };
 }
