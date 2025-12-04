@@ -62,6 +62,7 @@ function App() {
   - **Edge Mode**: Lines connecting vertices that can be selected and transformed
   - **Face Mode**: Triangular faces that can be selected and transformed
 - **Face Extrusion**: Extrude faces along their normal to create new geometry
+- **Edge Loop Face Creation**: Select multiple edges to form a loop and create a face
 
 ### Controls
 
@@ -69,6 +70,7 @@ function App() {
 - Shift+Click to add to selection
 - Use custom transform controls (see [Custom Controls Guide](./docs/custom-controls.md))
 - Extrude faces to create new geometry (see [Face Extrusion Guide](./docs/face-extrusion.md))
+- Create faces from edge loops (see [Edge Loop Face Creation Guide](./docs/edge-loop-face-creation.md))
 
 ### Bring Your Own Controls (BYOC)
 
