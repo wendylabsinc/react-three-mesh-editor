@@ -11,7 +11,11 @@ import {
   extrudeFace as extrudeFaceUtil,
   findLoopCutPath,
   executeLoopCut as executeLoopCutUtil,
+  validateEdgeLoop,
+  createFaceFromEdgeLoop,
+  faceExistsForVertices,
   type LoopCutPath,
+  type EdgeLoopValidation,
 } from '../utils/geometry';
 
 /**
@@ -77,6 +81,12 @@ export interface UseMeshEditorReturn {
   getLoopCutPath: (edgeIndex: number, t?: number) => LoopCutPath | null;
   /** Execute a loop cut on the geometry */
   executeLoopCut: (path: LoopCutPath) => void;
+  /** Validate if selected edges form a closed loop */
+  validateSelectedEdgeLoop: () => EdgeLoopValidation;
+  /** Create a face from the selected edge loop (if valid) */
+  createFaceFromSelectedEdges: () => boolean;
+  /** Check if a face already exists for the selected edge loop */
+  selectedEdgeLoopHasFace: () => boolean;
 }
 
 /**
@@ -310,6 +320,43 @@ export function useMeshEditor({
     [currentGeometry, vertices, faces, onGeometryChange]
   );
 
+  const handleValidateSelectedEdgeLoop = useCallback((): EdgeLoopValidation => {
+    const selectedEdgeIndices = Array.from(state.selectedEdges);
+    return validateEdgeLoop(selectedEdgeIndices, edges);
+  }, [state.selectedEdges, edges]);
+
+  const handleSelectedEdgeLoopHasFace = useCallback((): boolean => {
+    const validation = handleValidateSelectedEdgeLoop();
+    if (!validation.isValid) return false;
+    return faceExistsForVertices(validation.orderedVertices, faces);
+  }, [handleValidateSelectedEdgeLoop, faces]);
+
+  const handleCreateFaceFromSelectedEdges = useCallback((): boolean => {
+    const validation = handleValidateSelectedEdgeLoop();
+    if (!validation.isValid) return false;
+
+    // Check if face already exists
+    if (faceExistsForVertices(validation.orderedVertices, faces)) {
+      return false;
+    }
+
+    const result = createFaceFromEdgeLoop(
+      currentGeometry,
+      validation.orderedVertices,
+      vertices
+    );
+    setCurrentGeometry(result.geometry);
+    setGeometryVersion((v) => v + 1);
+    // Clear edge selection and select the new face
+    setState((prev) => ({
+      ...prev,
+      selectedEdges: new Set(),
+      selectedFaces: new Set([result.newFaceIndex]),
+    }));
+    onGeometryChange?.(result.geometry);
+    return true;
+  }, [handleValidateSelectedEdgeLoop, faces, currentGeometry, vertices, onGeometryChange]);
+
   return {
     state,
     vertices,
@@ -331,5 +378,8 @@ export function useMeshEditor({
     extrudeFace: handleExtrudeFace,
     getLoopCutPath: handleGetLoopCutPath,
     executeLoopCut: handleExecuteLoopCut,
+    validateSelectedEdgeLoop: handleValidateSelectedEdgeLoop,
+    createFaceFromSelectedEdges: handleCreateFaceFromSelectedEdges,
+    selectedEdgeLoopHasFace: handleSelectedEdgeLoopHasFace,
   };
 }

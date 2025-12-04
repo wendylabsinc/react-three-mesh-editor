@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber';
-import { OrbitControls, PivotControls, Line } from '@react-three/drei';
+import { OrbitControls, PivotControls, Line, Html } from '@react-three/drei';
 import { BoxGeometry, SphereGeometry, TorusGeometry, Matrix4, Vector3, Quaternion, BufferGeometry, DoubleSide, Raycaster, Mesh } from 'three';
 import { MeshEditor } from '../src/components/MeshEditor';
 import { MeshEditorMenuBar } from '../src/components/MeshEditorMenuBar';
@@ -1090,6 +1090,246 @@ const path = editor.getLoopCutPath(edgeIndex, t); // t = position along edge (0.
 
 // Execute the loop cut
 editor.executeLoopCut(path);
+\`\`\`
+        `,
+      },
+    },
+  },
+};
+
+/**
+ * Interactive edge component for edge loop selection.
+ */
+function SelectableEdge({
+  edge,
+  vertices,
+  isSelected,
+  onSelect,
+}: {
+  edge: { index: number; vertexIndices: [number, number] };
+  vertices: { position: [number, number, number] }[];
+  isSelected: boolean;
+  onSelect: (edgeIndex: number, addToSelection: boolean) => void;
+}) {
+  const points = useMemo(() => {
+    const v1 = vertices[edge.vertexIndices[0]];
+    const v2 = vertices[edge.vertexIndices[1]];
+    if (!v1 || !v2) return [];
+    return [v1.position, v2.position] as [[number, number, number], [number, number, number]];
+  }, [edge.vertexIndices, vertices]);
+
+  if (points.length < 2) return null;
+
+  return (
+    <Line
+      points={points}
+      color={isSelected ? '#ff6b00' : '#ffffff'}
+      lineWidth={isSelected ? 4 : 2}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(edge.index, e.shiftKey);
+      }}
+    />
+  );
+}
+
+/**
+ * Inner component for Edge Loop to Face demo.
+ */
+function EdgeLoopToFaceMeshInner({
+  geometry,
+  onFaceCreated,
+}: {
+  geometry: BufferGeometry;
+  onFaceCreated: () => void;
+}) {
+  const editor = useMeshEditor({
+    geometry,
+    initialMode: 'edit',
+    initialEditMode: 'edge',
+  });
+
+  // Validate selected edges on each render
+  const validation = editor.validateSelectedEdgeLoop();
+  const hasFace = validation.isValid ? editor.selectedEdgeLoopHasFace() : false;
+
+  const handleSelectEdge = useCallback(
+    (edgeIndex: number, addToSelection: boolean) => {
+      editor.selectEdge(edgeIndex, addToSelection);
+    },
+    [editor]
+  );
+
+  const handleCreateFace = useCallback(() => {
+    const success = editor.createFaceFromSelectedEdges();
+    if (success) {
+      onFaceCreated();
+    }
+  }, [editor, onFaceCreated]);
+
+  const selectedCount = editor.state.selectedEdges.size;
+
+  return (
+    <group>
+      {/* Semi-transparent mesh */}
+      <mesh geometry={editor.currentGeometry}>
+        <meshStandardMaterial color="#6699cc" transparent opacity={0.3} side={DoubleSide} />
+      </mesh>
+      {/* Wireframe overlay */}
+      <mesh geometry={editor.currentGeometry}>
+        <meshBasicMaterial wireframe color="#888888" transparent opacity={0.3} />
+      </mesh>
+      {/* Selectable edges */}
+      {editor.edges.map((edge) => (
+        <SelectableEdge
+          key={edge.index}
+          edge={edge}
+          vertices={editor.vertices}
+          isSelected={editor.state.selectedEdges.has(edge.index)}
+          onSelect={handleSelectEdge}
+        />
+      ))}
+      {/* Status display as HTML overlay */}
+      <Html position={[0, 1.5, 0]} center>
+        <div
+          style={{
+            background: 'rgba(0,0,0,0.8)',
+            color: 'white',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <div>Selected edges: {selectedCount}</div>
+          {selectedCount >= 3 && (
+            <>
+              <div style={{ color: validation.isValid ? '#4ade80' : '#f87171' }}>
+                {validation.isValid ? 'Valid loop' : validation.error}
+              </div>
+              {validation.isValid && (
+                <div style={{ color: hasFace ? '#fbbf24' : '#4ade80' }}>
+                  {hasFace ? 'Face already exists' : 'Can create face'}
+                </div>
+              )}
+              {validation.isValid && !hasFace && (
+                <button
+                  onClick={handleCreateFace}
+                  style={{
+                    marginTop: '4px',
+                    padding: '4px 8px',
+                    background: '#ff6b00',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Create Face
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function EdgeLoopToFaceDemo() {
+  const [key, setKey] = useState(0);
+  const [faceCount, setFaceCount] = useState(0);
+
+  // Create an open box (5 faces instead of 6) to demonstrate creating the missing face
+  const geometry = useMemo(() => {
+    const geo = new BoxGeometry(1, 1, 1);
+    // Remove top face (last 2 triangles = 6 indices)
+    const indices = geo.getIndex();
+    if (indices) {
+      const newIndices = Array.from(indices.array).slice(0, -6);
+      geo.setIndex(newIndices);
+    }
+    return geo;
+  }, []);
+
+  const handleFaceCreated = useCallback(() => {
+    setFaceCount((c) => c + 1);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    setKey((k) => k + 1);
+    setFaceCount(0);
+  }, []);
+
+  return (
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="m-2 flex flex-wrap items-center gap-4 rounded-md border bg-background p-3">
+        <span className="text-sm font-medium">Edge Loop to Face Demo</span>
+        <div className="h-6 w-px bg-border" />
+        <span className="text-sm text-muted-foreground">
+          Shift+Click edges to select multiple. Select 3+ edges forming a closed loop, then create a face.
+        </span>
+        <span className="text-sm">
+          Faces created: <span className="font-mono">{faceCount}</span>
+        </span>
+        <button
+          onClick={handleReset}
+          className="rounded bg-gray-500 px-3 py-1 text-sm text-white hover:bg-gray-600"
+        >
+          Reset
+        </button>
+      </div>
+      <div style={{ flex: 1 }}>
+        <Canvas camera={{ position: [3, 3, 3], fov: 50 }}>
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[10, 10, 5]} intensity={1} />
+          <EdgeLoopToFaceMeshInner key={key} geometry={geometry} onFaceCreated={handleFaceCreated} />
+          <OrbitControls makeDefault />
+          <gridHelper args={[10, 10]} />
+        </Canvas>
+      </div>
+    </div>
+  );
+}
+
+export const EdgeLoopToFace: Story = {
+  render: () => <EdgeLoopToFaceDemo />,
+  parameters: {
+    docs: {
+      description: {
+        story: `
+# Edge Loop to Face
+
+This demo shows how to select multiple edges to form an edge loop and create a face from it.
+
+## How to use
+1. **Shift+Click** on edges to select multiple edges
+2. Select at least 3 edges that form a closed loop (each vertex connects exactly 2 edges)
+3. The overlay shows validation status
+4. Click "Create Face" to fill the loop with a face
+
+## Features
+- Multi-edge selection with Shift+Click
+- Real-time validation of edge loop
+- Detection of existing faces
+- Automatic triangulation for polygons with 4+ vertices
+
+## API
+\`\`\`tsx
+const editor = useMeshEditor({ geometry });
+
+// Select edges (Shift for multi-select)
+editor.selectEdge(edgeIndex, true);
+
+// Validate if selected edges form a closed loop
+const validation = editor.validateSelectedEdgeLoop();
+// { isValid: boolean, orderedVertices: number[], error?: string }
+
+// Check if face already exists
+const hasFace = editor.selectedEdgeLoopHasFace();
+
+// Create face from selected edges
+const success = editor.createFaceFromSelectedEdges();
 \`\`\`
         `,
       },

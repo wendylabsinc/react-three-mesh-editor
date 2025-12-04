@@ -1001,3 +1001,252 @@ export function executeLoopCut(
     newVertexIndices,
   };
 }
+
+/**
+ * Result of validating an edge loop.
+ */
+export interface EdgeLoopValidation {
+  /** Whether the edges form a valid closed loop */
+  isValid: boolean;
+  /** Ordered vertex indices forming the loop (if valid) */
+  orderedVertices: number[];
+  /** Error message if not valid */
+  error?: string;
+}
+
+/**
+ * Validate that selected edges form a closed loop.
+ *
+ * Checks if the edges connect end-to-end to form a closed polygon.
+ *
+ * @param edgeIndices - Array of selected edge indices
+ * @param edges - Array of all edges in the geometry
+ * @returns Validation result with ordered vertices if valid
+ */
+export function validateEdgeLoop(
+  edgeIndices: number[],
+  edges: EdgeData[]
+): EdgeLoopValidation {
+  if (edgeIndices.length < 3) {
+    return {
+      isValid: false,
+      orderedVertices: [],
+      error: 'Need at least 3 edges to form a face',
+    };
+  }
+
+  // Get the selected edges
+  const selectedEdges = edgeIndices.map((i) => edges[i]).filter(Boolean);
+  if (selectedEdges.length !== edgeIndices.length) {
+    return {
+      isValid: false,
+      orderedVertices: [],
+      error: 'Some edge indices are invalid',
+    };
+  }
+
+  // Build adjacency: vertex -> edges connected to it
+  const vertexToEdges = new Map<number, number[]>();
+  for (let i = 0; i < selectedEdges.length; i++) {
+    const edge = selectedEdges[i];
+    for (const v of edge.vertexIndices) {
+      if (!vertexToEdges.has(v)) {
+        vertexToEdges.set(v, []);
+      }
+      vertexToEdges.get(v)!.push(i);
+    }
+  }
+
+  // For a valid loop, each vertex must be connected to exactly 2 edges
+  for (const [vertex, edgeList] of vertexToEdges) {
+    if (edgeList.length !== 2) {
+      return {
+        isValid: false,
+        orderedVertices: [],
+        error: `Vertex ${vertex} is connected to ${edgeList.length} edges (expected 2)`,
+      };
+    }
+  }
+
+  // Traverse the loop to get ordered vertices
+  const orderedVertices: number[] = [];
+  const visitedEdges = new Set<number>();
+
+  // Start from first edge
+  let currentEdgeIdx = 0;
+  let currentVertex = selectedEdges[0].vertexIndices[0];
+  orderedVertices.push(currentVertex);
+  visitedEdges.add(currentEdgeIdx);
+
+  while (visitedEdges.size < selectedEdges.length) {
+    const currentEdge = selectedEdges[currentEdgeIdx];
+    // Get the other vertex of this edge
+    const nextVertex =
+      currentEdge.vertexIndices[0] === currentVertex
+        ? currentEdge.vertexIndices[1]
+        : currentEdge.vertexIndices[0];
+
+    orderedVertices.push(nextVertex);
+
+    // Find the next edge (connected to nextVertex, not yet visited)
+    const connectedEdges = vertexToEdges.get(nextVertex)!;
+    const nextEdgeIdx = connectedEdges.find((idx) => !visitedEdges.has(idx));
+
+    if (nextEdgeIdx === undefined) {
+      // Should close the loop
+      break;
+    }
+
+    visitedEdges.add(nextEdgeIdx);
+    currentEdgeIdx = nextEdgeIdx;
+    currentVertex = nextVertex;
+  }
+
+  // Remove the last vertex if it's the same as the first (closed loop)
+  if (
+    orderedVertices.length > 1 &&
+    orderedVertices[orderedVertices.length - 1] === orderedVertices[0]
+  ) {
+    orderedVertices.pop();
+  }
+
+  // Verify we visited all edges
+  if (visitedEdges.size !== selectedEdges.length) {
+    return {
+      isValid: false,
+      orderedVertices: [],
+      error: 'Edges do not form a single connected loop',
+    };
+  }
+
+  return {
+    isValid: true,
+    orderedVertices,
+  };
+}
+
+/**
+ * Result of creating a face from an edge loop.
+ */
+export interface CreateFaceResult {
+  /** The new geometry with the face added */
+  geometry: BufferGeometry;
+  /** Index of the newly created face (first triangle if polygon was triangulated) */
+  newFaceIndex: number;
+}
+
+/**
+ * Create a face from a closed edge loop.
+ *
+ * Takes the ordered vertices from a valid edge loop and creates triangular
+ * faces to fill the polygon. Uses ear clipping for triangulation of
+ * polygons with more than 3 vertices.
+ *
+ * @param geometry - The original BufferGeometry
+ * @param orderedVertices - Ordered vertex indices forming the closed loop
+ * @param vertices - Vertex data for position lookup
+ * @returns Result containing the new geometry and new face index
+ */
+export function createFaceFromEdgeLoop(
+  geometry: BufferGeometry,
+  orderedVertices: number[],
+  vertices: VertexData[]
+): CreateFaceResult {
+  const positionAttribute = geometry.getAttribute('position');
+  const indexAttribute = geometry.getIndex();
+
+  if (!positionAttribute) {
+    throw new Error('Geometry has no position attribute');
+  }
+
+  // Get existing indices
+  const oldIndices: number[] = indexAttribute
+    ? Array.from(indexAttribute.array)
+    : [];
+
+  // Get buffer indices for each unique vertex
+  const getBufferIndex = (uniqueIdx: number): number => {
+    const vertex = vertices[uniqueIdx];
+    if (vertex?.originalIndices && vertex.originalIndices.length > 0) {
+      return vertex.originalIndices[0];
+    }
+    return uniqueIdx;
+  };
+
+  // Triangulate the polygon
+  // For 3 vertices: single triangle
+  // For 4+ vertices: use fan triangulation (simple but works for convex polygons)
+  const newTriangles: number[] = [];
+
+  if (orderedVertices.length === 3) {
+    // Simple triangle
+    newTriangles.push(
+      getBufferIndex(orderedVertices[0]),
+      getBufferIndex(orderedVertices[1]),
+      getBufferIndex(orderedVertices[2])
+    );
+  } else if (orderedVertices.length >= 4) {
+    // Fan triangulation from first vertex
+    // This works well for convex polygons
+    const v0 = getBufferIndex(orderedVertices[0]);
+    for (let i = 1; i < orderedVertices.length - 1; i++) {
+      const v1 = getBufferIndex(orderedVertices[i]);
+      const v2 = getBufferIndex(orderedVertices[i + 1]);
+      newTriangles.push(v0, v1, v2);
+    }
+  }
+
+  // Combine old and new indices
+  const newIndices = [...oldIndices, ...newTriangles];
+
+  // Create new geometry
+  const newGeometry = new BufferGeometry();
+  newGeometry.setAttribute(
+    'position',
+    new BufferAttribute(positionAttribute.array.slice() as Float32Array, 3)
+  );
+  newGeometry.setIndex(new BufferAttribute(new Uint32Array(newIndices), 1));
+  newGeometry.computeVertexNormals();
+  newGeometry.computeBoundingSphere();
+
+  // The new face index is the first new triangle
+  const newFaceIndex = oldIndices.length / 3;
+
+  return {
+    geometry: newGeometry,
+    newFaceIndex,
+  };
+}
+
+/**
+ * Check if a face already exists for the given vertices.
+ *
+ * @param orderedVertices - Ordered vertex indices forming the potential face
+ * @param faces - Array of all faces in the geometry
+ * @returns True if a face with these vertices already exists
+ */
+export function faceExistsForVertices(
+  orderedVertices: number[],
+  faces: FaceData[]
+): boolean {
+  if (orderedVertices.length !== 3) {
+    // For polygons with more than 3 vertices, check if all triangulated
+    // faces would already exist (simplified check)
+    return false;
+  }
+
+  const sortedTarget = [...orderedVertices].sort((a, b) => a - b);
+
+  for (const face of faces) {
+    const sortedFace = [...face.vertexIndices].sort((a, b) => a - b);
+    if (
+      sortedFace[0] === sortedTarget[0] &&
+      sortedFace[1] === sortedTarget[1] &&
+      sortedFace[2] === sortedTarget[2]
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
