@@ -2,7 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": ["./src/index.ts"],
   "out": "./site/docs",
-  "name": "react-three-mesh-editor",
+  "name": "@wendylabsinc/react-three-mesh-editor",
   "readme": "./docs/custom-controls.md",
   "excludePrivate": true,
   "excludeInternal": true,

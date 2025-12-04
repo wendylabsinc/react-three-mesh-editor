@@ -1,6 +1,6 @@
 # Custom Controls Guide
 
-This guide explains how to use the "Bring Your Own Controls" (BYOC) pattern to integrate custom transform controls with `react-three-mesh-editor`.
+This guide explains how to use the "Bring Your Own Controls" (BYOC) pattern to integrate custom transform controls with `@wendylabsinc/react-three-mesh-editor`.
 
 ## Overview
 
@@ -45,8 +45,8 @@ interface VertexControlRenderProps {
 import { useRef } from 'react';
 import { PivotControls } from '@react-three/drei';
 import { Matrix4, Vector3 } from 'three';
-import { MeshEditor } from 'react-three-mesh-editor';
-import type { VertexControlRenderProps } from 'react-three-mesh-editor';
+import { MeshEditor } from '@wendylabsinc/react-three-mesh-editor';
+import type { VertexControlRenderProps } from '@wendylabsinc/react-three-mesh-editor';
 
 function VertexPivotControl({ vertex, onMove }: VertexControlRenderProps) {
   const matrixRef = useRef(new Matrix4());
@@ -127,7 +127,7 @@ interface EdgeControlRenderProps {
 import { useRef, useCallback, useMemo } from 'react';
 import { PivotControls } from '@react-three/drei';
 import { Matrix4, Vector3, Quaternion } from 'three';
-import type { EdgeControlRenderProps, FaceControlRenderProps } from 'react-three-mesh-editor';
+import type { EdgeControlRenderProps, FaceControlRenderProps } from '@wendylabsinc/react-three-mesh-editor';
 
 function TransformPivotControl({
   center,

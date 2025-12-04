@@ -1,6 +1,6 @@
 # Face Extrusion Guide
 
-This guide explains how to use the face extrusion feature in `react-three-mesh-editor`.
+This guide explains how to use the face extrusion feature in `@wendylabsinc/react-three-mesh-editor`.
 
 ## Overview
 
@@ -21,7 +21,7 @@ The `useMeshEditor` hook provides the `extrudeFace` method:
 import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { BoxGeometry } from 'three';
-import { useMeshEditor, MeshEditor } from 'react-three-mesh-editor';
+import { useMeshEditor, MeshEditor } from '@wendylabsinc/react-three-mesh-editor';
 
 function ExtrudableEditor() {
   const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
@@ -91,8 +91,8 @@ import { useState, useMemo, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, PivotControls } from '@react-three/drei';
 import { BoxGeometry, BufferGeometry, Matrix4, Vector3, Quaternion } from 'three';
-import { useMeshEditor, MeshEditor } from 'react-three-mesh-editor';
-import type { FaceControlRenderProps } from 'react-three-mesh-editor';
+import { useMeshEditor, MeshEditor } from '@wendylabsinc/react-three-mesh-editor';
+import type { FaceControlRenderProps } from '@wendylabsinc/react-three-mesh-editor';
 
 // Reusable face control component
 function FacePivotControl({

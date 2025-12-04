@@ -1,6 +1,6 @@
 # Edge Loop Face Creation Guide
 
-This guide explains how to select edges to form a loop and create a face from that loop in `react-three-mesh-editor`.
+This guide explains how to select edges to form a loop and create a face from that loop in `@wendylabsinc/react-three-mesh-editor`.
 
 ## Overview
 
@@ -21,7 +21,7 @@ The `useMeshEditor` hook provides three methods for edge loop operations:
 import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { BoxGeometry } from 'three';
-import { useMeshEditor, MeshEditor } from 'react-three-mesh-editor';
+import { useMeshEditor, MeshEditor } from '@wendylabsinc/react-three-mesh-editor';
 
 function EdgeLoopEditor() {
   const geometry = useMemo(() => new BoxGeometry(1, 1, 1), []);
@@ -129,7 +129,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { Canvas, ThreeEvent } from '@react-three/fiber';
 import { OrbitControls, Line, Html } from '@react-three/drei';
 import { BufferGeometry, DoubleSide } from 'three';
-import { useMeshEditor } from 'react-three-mesh-editor';
+import { useMeshEditor } from '@wendylabsinc/react-three-mesh-editor';
 
 // Create an open box (missing top face)
 function createOpenBox(): BufferGeometry {

@@ -2,8 +2,8 @@
 
 A React Three Fiber library for mesh editing similar to Blender, with object/edit modes and vertex/edge/face selection.
 
-[![npm version](https://img.shields.io/npm/v/react-three-mesh-editor)](https://www.npmjs.com/package/react-three-mesh-editor)
-[![license](https://img.shields.io/npm/l/react-three-mesh-editor)](https://github.com/wendylabsinc/react-three-mesh-editor/blob/main/LICENSE)
+[![npm version](https://img.shields.io/npm/v/@wendylabsinc/react-three-mesh-editor)](https://www.npmjs.com/package/@wendylabsinc/react-three-mesh-editor)
+[![license](https://img.shields.io/npm/l/@wendylabsinc/react-three-mesh-editor)](https://github.com/wendylabsinc/react-three-mesh-editor/blob/main/LICENSE)
 
 **[Documentation](https://wendylabsinc.github.io/react-three-mesh-editor/)** | **[Storybook](https://wendylabsinc.github.io/react-three-mesh-editor/stories)** | **[API Reference](https://wendylabsinc.github.io/react-three-mesh-editor/docs)**
 
@@ -12,7 +12,7 @@ A React Three Fiber library for mesh editing similar to Blender, with object/edi
 ## Installation
 
 ```bash
-npm install react-three-mesh-editor
+npm install @wendylabsinc/react-three-mesh-editor
 ```
 
 ### Peer Dependencies
@@ -30,7 +30,7 @@ The core `MeshEditor` component can be used standalone without any UI dependenci
 ```tsx
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { MeshEditor } from 'react-three-mesh-editor';
+import { MeshEditor } from '@wendylabsinc/react-three-mesh-editor';
 import { BoxGeometry } from 'three';
 import { useMemo, useState } from 'react';
 
@@ -145,7 +145,7 @@ interface MeshEditorProps {
 A pre-built UI component for controlling the editor modes. This component uses Tailwind CSS and shadcn/ui components.
 
 ```tsx
-import { MeshEditorMenuBar } from 'react-three-mesh-editor';
+import { MeshEditorMenuBar } from '@wendylabsinc/react-three-mesh-editor';
 
 <MeshEditorMenuBar
   mode={mode}
@@ -166,7 +166,7 @@ Add the library to your CSS sources using the `@source` directive:
 ```css
 /* app.css */
 @import "tailwindcss";
-@source "../node_modules/react-three-mesh-editor/dist";
+@source "../node_modules/@wendylabsinc/react-three-mesh-editor/dist";
 ```
 
 ### Build Your Own UI
@@ -174,8 +174,8 @@ Add the library to your CSS sources using the `@source` directive:
 You can skip the UI components entirely and build your own controls using the exported types and hooks:
 
 ```tsx
-import { useMeshEditor } from 'react-three-mesh-editor';
-import type { EditorMode, EditMode } from 'react-three-mesh-editor';
+import { useMeshEditor } from '@wendylabsinc/react-three-mesh-editor';
+import type { EditorMode, EditMode } from '@wendylabsinc/react-three-mesh-editor';
 
 function MyCustomControls({ geometry }) {
   const editor = useMeshEditor({ geometry });
